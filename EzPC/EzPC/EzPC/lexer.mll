@@ -55,10 +55,10 @@ let cvt_uint64_literal s =
   Uint64.of_string (String.sub s 0 (String.length s - 2))
 let cvt_float_literal s =
   Float.of_string s
-(* ℝ⨂ literals carry an "m" suffix, e.g. 2.0m -- strip it before parsing *)
-let cvt_realmul_literal s =
+(* ℝ⨂ literals carry an "m" suffix, e.g. 2.0m -- strip it before parsing 
+   additive literals carry an "a" suffix as well *)
+let cvt_real_literal s =
   Float.of_string (String.sub s 0 (String.length s - 1))
-
 }
 
 let white = [' ' '\t']+
@@ -90,14 +90,17 @@ rule read =
   | "~"   { BITWISE_NEG }
   | "!"   { NOT }
   | "+"   { SUM }
-  | "⨁"   { SUM }
   | "-"   { SUB }
   | "*"   { MUL }
-  | "⨂"   { TENSOR }
   | "∞"   { INFTY }
   | "/"   { DIV }
   | "%"   { MOD }
   | "^^"  { POW }
+  | "<*>" { OTIMES } (* multiplicative tensor *)
+  | "<|>" { OTIMES_PAR } (* multiplicative par *)
+  | "\\/" { OPLUS_P } (* additive p-sum *)
+  | "/\\" { OPLUS_NP } (* additive harmonic p-sum *)
+  | "^*"  { DUAL } (* inverse *)
   | ">>"  { R_SHIFT_A }
   | "<<"  { L_SHIFT }
   | "&"   { BITWISE_AND }
@@ -120,9 +123,9 @@ rule read =
   | "uint64" { TUINT64 }
   | "float" { TFLOAT }
   | "bool"  { TBOOL }
+  | "areal" { TREALADD }
+  | "mreal" { TREALMUL }
   | "void" {TVOID }
-  | "ℝ⨂" { TREALMUL }
-  | "ℝ⨁" { TINT32 }
   | "true" { TRUE }
   | "false" { FALSE }
   | "al" { ARITHMETIC }
@@ -145,6 +148,8 @@ rule read =
   | "SERVER" { SERVER }
   | "CLIENT" { CLIENT }
   | "ALL" { ALL }
+  | "infm" { MREAL infinity }
+  | "infa" { AREAL infinity }
   | id    { ID (Lexing.lexeme lexbuf) }
   | int { try INT32 (cvt_int32_literal (Lexing.lexeme lexbuf))
           with Failure _ -> raise (Error ("literal overflow int32")) }
@@ -152,6 +157,8 @@ rule read =
           with Failure _ -> raise (Error ("literal overflow float")) }
   | flt "m" { try REALMUL (cvt_realmul_literal (Lexing.lexeme lexbuf))
           with Failure _ -> raise (Error ("literal overflow realmul")) }
+  | flt "a" {try REALADD (cvt_real_literal (Lexing.lexeme lexbuf))
+          with Failure _ -> raise (Error ("literal overflow realadd")) }
   | int "u" { try UINT32 (cvt_uint32_literal (Lexing.lexeme lexbuf))
           with Failure _ -> raise (Error ("literal overflow uint32")) }
   | int "L" { try INT64 (cvt_int64_literal (Lexing.lexeme lexbuf))

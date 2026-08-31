@@ -69,12 +69,15 @@ type const =
   | FloatC   of float
   | BoolC    of bool
   | RealMulC of float  (* element of ℝ⨂ := [0, ∞], infinity is Stdlib.infinity *)
+  | RealAddC of float  
 
 type unop =
   (* Arithmetic *)
   | U_minus | Bitwise_neg
   (* Logical *)
   | Not
+  (* QLL inverse *)
+  | Dual (* 1/a for RealMul, -a for RealAdd *)
 
 type binop =
   (* Arithmetic *)
@@ -83,6 +86,9 @@ type binop =
   | Tensor
   (* Logical *)
   | And | Or | Xor | R_shift_l
+  (* QLL *)
+  | Otimes | Otimes_par (* multiplicative: tensor/par (a mult_par b) *)
+  | Oplus_p | Oplus_np (* additives: p-sum/harmonic p-sum *)
 
 type var = {
     name: string;
@@ -170,6 +176,8 @@ let unop_to_string (u:unop) :string =
   | U_minus -> "-"
   | Bitwise_neg -> "~"
   | Not -> "!"
+  (* QLL *)
+  | Dual => "^*" (* inverse *)
             
 let binop_to_string (b:binop) :string =
   match b with
@@ -194,7 +202,12 @@ let binop_to_string (b:binop) :string =
   | Xor -> "xor"
   | R_shift_l -> ">>>"
   | Tensor -> "tensor"
-            
+  (* QLL *)
+  | Otimes -> "<*>"
+  | Otimes_par -> "<|>"
+  | Oplus_p -> "\\/"
+  | Oplus_np -> "/\\"
+              
 let rec expr_to_string (e:expr) :string =
   let brak (s:string) :string = "(" ^ s ^ ")" in
   match e.data with
@@ -204,8 +217,9 @@ let rec expr_to_string (e:expr) :string =
   | Const (Int32C n)  -> Int32.to_string n
   | Const (Int64C n)  -> Int64.to_string n
   | Const (FloatC f)   -> Float.to_string f
+  | Const (RealMulC f) -> Float.to_string f ^ "m" (* QLL *)
+  | Const (RealAddC f) -> Float.to_string f ^ "a" (* QLL *)
   | Const (BoolC b)   -> string_of_bool b
-  | Const (RealMulC f) -> if f = infinity then "∞" else Float.to_string f ^ "m"
   | Var x -> x.name
   | Unop (op, e, lopt) ->
      let op_str = unop_to_string op ^ "_" ^
@@ -239,8 +253,8 @@ let rec typ_to_string (t:typ) :string =
        | Int64  -> "int64"
        | Float  -> "float"
        | Bool -> "bool"
-       | RealAdd -> "ℝ⨁"
-       | RealMul -> "ℝ⨂"
+       | RealAdd -> "areal"
+       | RealMul -> "mreal"
      in
      prefix ^ " " ^ bt_str
   | Array (quals, t, e) ->
@@ -361,10 +375,10 @@ let is_float_bt (bt:base_type) :bool =
   | Float -> true
   | _ -> false
 
-(* ℝ⨂ := [0, ∞], the multiplicative extended non-negative reals *)
-let is_realmul_bt (bt:base_type) :bool =
+  (* is eiter QLL truth domains (additive or multplicative) *)
+let is_qll_bt(bt:base_type) : bool =
   match bt with
-  | RealMul -> true
+  | RealMul | RealAdd -> true
   | _ -> false
 
 (*
@@ -372,7 +386,7 @@ let is_realmul_bt (bt:base_type) :bool =
  * machinery of the SECFLOAT (FPArray/FPOp) and EMP (Float) backends, since
  * both already represent +∞.
  *)
-let is_baba_bt (bt:base_type) :bool = is_float_bt bt || is_realmul_bt bt
+let is_baba_bt (bt:base_type) :bool = is_float_bt bt || is_qll_bt bt
 
 let get_bt (t:typ) : base_type =
   let bt,l = get_bt_and_label t in
@@ -415,7 +429,8 @@ let typeof_const (c:const) (r:range) :typ =
    | Int64C n  -> Base (Int64, Some Public)
    | FloatC f   -> Base (Float, Some Public)
    | BoolC b   -> Base (Bool, Some Public)
-   | RealMulC f -> Base (RealMul, Some Public)) |> mk_syntax r
+   | RealMulC f -> Base (RealMul, Some Public) 
+   | RealAddC f -> Base (RealAdd, Some Public)) |> mk_syntax r
 
 (* Leave this be, because we're not considering int mixed with float operations *)
 let join_types (t1:typ) (t2:typ) :typ option =

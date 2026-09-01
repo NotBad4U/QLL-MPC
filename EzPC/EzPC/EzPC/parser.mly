@@ -65,7 +65,7 @@ let match_stmt_option msg str =
 %token <Stdint.int32> INT32
 %token <Stdint.int64> INT64
 %token <float> FLOAT
-%token <float> REALMUL
+%token <float> REALMUL REALADD
 %token INFTY
 %token LPAREN RPAREN
 %token LBRACE RBRACE
@@ -76,7 +76,7 @@ let match_stmt_option msg str =
 %token COMMA
 %token TINT32 TINT64 TUINT32 TUINT64
 %token TFLOAT
-%token TREALMUL
+%token TREALMUL TREALADD
 %token TBOOL TRUE FALSE
 %token TVOID
 %token ARITHMETIC BOOLEAN BABA PUBLIC
@@ -86,7 +86,7 @@ let match_stmt_option msg str =
 %token EQUALS
 %token BITWISE_NEG NOT
 %token SUM SUB MUL DIV MOD POW R_SHIFT_A L_SHIFT BITWISE_AND BITWISE_OR BITWISE_XOR AND OR XOR R_SHIFT_L
-%token TENSOR
+%token OTIMES OTIMES_PAR OPLUS_P OPLUS_NP DUAL
 %token LESS_THAN GREATER_THAN IS_EQUAL GREATER_THAN_EQUAL LESS_THAN_EQUAL
 %token SUBSUMPTION FOR WHILE
 %token EOF
@@ -112,11 +112,14 @@ let match_stmt_option msg str =
 %left GREATER_THAN GREATER_THAN_EQUAL LESS_THAN LESS_THAN_EQUAL
 %left R_SHIFT_A L_SHIFT R_SHIFT_L
 %left SUM SUB
-%left MUL DIV MOD TENSOR
+%left OPLUS_P OPLUS_NP
+%left MUL DIV MOD
+%left OTIMES OTIMES_PAR
 %left POW
 %nonassoc UNOP_ASSOC
 %nonassoc UNOP_SOME_ASSOC
 %nonassoc LBRACKET
+%nonassoc DUAL
 
 %start program
 %type <Ast.program> program
@@ -142,6 +145,7 @@ base_type:
   | TINT64 { Ast.Int64 }
   | TFLOAT { Ast.Float }
   | TREALMUL { Ast.RealMul }
+  | TREALADD { Ast.RealAdd }
   | TBOOL { Ast.Bool }
   ;
 
@@ -225,7 +229,11 @@ expr:
   | e1 = expr; L_SHIFT ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.L_shift,e1,e2,p)) $startpos $endpos }    
   | e1 = expr; R_SHIFT_L ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.R_shift_l,e1,e2,p)) $startpos $endpos }    
   | e1 = expr; MUL ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Mul,e1,e2,p)) $startpos $endpos }
-  | e1 = expr; TENSOR ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Tensor,e1,e2,p)) $startpos $endpos }
+  | e1 = expr; OTIMES ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Otimes,e1,e2,p)) $startpos $endpos }
+  | e1 = expr; OTIMES_PAR ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Otimes_par,e1,e2,p)) $startpos $endpos }
+  | e1 = expr; OPLUS_P ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Oplus_p,e1,e2,p)) $startpos $endpos }
+  | e1 = expr; OPLUS_NP ; p = option(preqel); e2 = expr; { astnd (Ast.Unop(Ast.Oplus_np,e1,e2,p)) $startpos $endpos }
+  | e1 = expr; DUAL ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Dual,e1,e2,p)) $startpos $endpos }
   | e1 = expr; POW ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Pow,e1,e2,p)) $startpos $endpos }    
   | e1 = expr; DIV ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Div,e1,e2,p)) $startpos $endpos }    
   | e1 = expr; MOD ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Mod,e1,e2,p)) $startpos $endpos }    
@@ -268,6 +276,8 @@ const:
   | SUB; f = FLOAT; { Ast.FloatC (Float.neg f) }
   (* ℝ⨂ := [0, ∞]. No negation rule: there is no -∞ and no negative element. *)
   | f = REALMUL { Ast.RealMulC f }
+  | f = REALADD { Ast.RealAddC f }
+  | SUB; f = REALADD; {Ast.RealAddC (Float.neg f)}
   | INFTY { Ast.RealMulC Float.infinity }
   | TRUE { Ast.BoolC true }
   | FALSE { Ast.BoolC false }

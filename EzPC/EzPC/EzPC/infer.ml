@@ -41,7 +41,10 @@ let rec infer_unop_label (g:gamma) (op:unop) (e:expr) (lopt:label option) (r:ran
      match label_of_expr g e with
      | None -> warn_label_inference_failed (Unop (op, e, lopt)) r
      | Some Public -> Unop (op, e, Some Public)
-     | Some _ -> Unop (op, e, Some (Secret Boolean))
+     | Some _ ->
+        (match op with
+        | Dual -> Unop (op, e, Some (Secret Baba))
+        | Some _ -> Unop (op, e, Some (Secret Boolean)))
 
 and infer_binop_label (g:gamma) (op:binop) (e1:expr) (e2:expr) (lopt:label option) (rng:range) :expr' =
   let e1, e2 = infer_op_labels_expr g e1, infer_op_labels_expr g e2 in
@@ -49,7 +52,7 @@ and infer_binop_label (g:gamma) (op:binop) (e1:expr) (e2:expr) (lopt:label optio
   | Some _ -> Binop (op, e1, e2, lopt)
   | None ->
      
-     
+        
      match label_of_expr g e1, label_of_expr g e2 with
      | None, _ -> warn_label_inference_failed (Binop (op, e1, e2, lopt)) rng
      | _, None -> warn_label_inference_failed (Binop (op, e1, e2, lopt)) rng
@@ -66,7 +69,7 @@ and infer_binop_label (g:gamma) (op:binop) (e1:expr) (e2:expr) (lopt:label optio
         match op with
         | Sum | Sub | Div | Mod -> set_default_label None
         (* ⨂ operates on ℝ⨂, which reuses the float (Baba) sharing when secret *)
-        | Tensor -> Binop (op, e1, e2, Some (Secret Baba))
+        | Otimes | Otimes_par | Oplus_p | Oplus_np -> Binop (op, e1, e2, Some (Secret Baba))
         | Mul -> 
           if is_float_bt (get_bt t1) ||  is_float_bt (get_bt t2)
             then Binop (op, e1, e2, Some (Secret Baba))
@@ -129,9 +132,9 @@ let rec infer_typ_label (suff:string) (t:typ) :typ =
   (* ℝ⨂ reuses the float sharing when secret, so it defaults like Float.
      Without this case the catch-all below would assign Secret Arithmetic,
      which then fails well-formedness. *)
-  | Base (RealMul, None) ->
+  | Base ((RealMul | RealAdd) as bt, None) ->
     print_string ("Assigning default label Secret Baba to: " ^ suff ^ "\n");
-    { t with data = Base (RealMul, Some (Secret Baba)) }
+    { t with data = Base (bt, Some (Secret Baba)) }
   | Base (bt, None) ->
      print_string ("Assigning default label Secret Arithmetic to: " ^ suff ^ "\n");
      { t with data = Base (bt, Some (Secret Arithmetic)) }

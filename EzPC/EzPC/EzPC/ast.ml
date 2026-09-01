@@ -177,7 +177,7 @@ let unop_to_string (u:unop) :string =
   | Bitwise_neg -> "~"
   | Not -> "!"
   (* QLL *)
-  | Dual => "^*" (* inverse *)
+  | Dual -> "^*" (* inverse *)
             
 let binop_to_string (b:binop) :string =
   match b with

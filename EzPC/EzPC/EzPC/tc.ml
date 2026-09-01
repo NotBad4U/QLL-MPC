@@ -111,7 +111,7 @@ let check_binop_label_is_consistent (e:expr) (op:binop) (l:label) :unit result =
      | Sum | Sub | Div ->  Well_typed ()
      | Mul when (l = Baba  || l = Arithmetic) -> Well_typed ()
      (* ⨂ operates on ℝ⨂, which is baba shared when secret *)
-     | Tensor when l = Baba -> Well_typed ()
+     | Otimes | Otimes_par | Oplus_p | Oplus_p when l = Baba -> Well_typed()
      | Mod when (l = Boolean  || l = Arithmetic) -> Well_typed ()
      | Greater_than | Less_than | Greater_than_equal | Less_than_equal | Is_equal  -> Well_typed ()
      | L_shift when l = Boolean -> Well_typed ()
@@ -123,6 +123,7 @@ let check_binop_label_is_consistent (e:expr) (op:binop) (l:label) :unit result =
      | Bitwise_and when l = Boolean -> Well_typed ()
      | Bitwise_or when l = Boolean -> Well_typed ()
      | Bitwise_xor when l = Boolean -> Well_typed ()
+     
      | _ -> err
 
 let check_array_type_and_return_bt (e:expr) (t:typ) :eresult =
@@ -153,7 +154,7 @@ let check_expected_numeric_typ (e:expr) (t:typ) (l:label) :unit result =
   let err = Type_error ("Expression " ^ (expr_to_string e) ^ " should have either integer/floating type with label " ^ label_to_string l ^
                           ", instead got: " ^ typ_to_string t, e.metadata) in
   match t.data with
-  | Base (bt, Some lt) when (bt <> Bool && bt <> RealMul && bt <> RealAdd && lt = l)  -> Well_typed ()
+  | Base (bt, Some lt) when (bt <> Bool && not (is_qll_bt) && lt = l)  -> Well_typed ()
   | _ -> err
 
 (* ℝ⨂ := [0, ∞], the operand type of the QLL tensor operator ⨂ *)

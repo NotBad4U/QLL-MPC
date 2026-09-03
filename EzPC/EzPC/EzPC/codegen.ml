@@ -45,6 +45,7 @@ let o_punop :unop -> comp = function
   | U_minus -> o_str "-"
   | Bitwise_neg -> o_str "~"
   | Not -> o_str "!"
+  | Dual -> o_str "^*"
                         
 let o_pbinop :binop -> comp = function
   | Sum          -> o_str "+"
@@ -67,7 +68,7 @@ let o_pbinop :binop -> comp = function
   | Or           -> o_str "||"
   | Xor          -> o_str "^"
   | R_shift_l    -> o_str ">>"
-  | Tensor       -> failwith "ABY does not support the extended reals ℝ⨂/Tensor; use --codegen CPPFLOAT"
+  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith "codegen (ABY): QLL operators require --codegen CPPFLOAT or SECFLOAT."
 
 (*
  * ABY doesn't like circ->PutINVGate where circ:Circuit*, so we need to coerce it to BooleanCircuit*
@@ -105,6 +106,7 @@ let o_sunop (l:secret_label) (op:unop) (c:comp) :comp =
     | U_minus -> failwith "Codegen: unary minus is not being produced by lexer or parser right now."
     | Bitwise_neg 
     | Not -> o_str "PutINVGate"
+    | Dual -> failwith ("codegen (ABY): " ^ unop_to_string op ^ " requires CPPFLOAT or SECFLOAT")
   in
   o_cbfunction_maybe_coerce true l c_op [c]
   
@@ -132,7 +134,7 @@ let o_sbinop (l:secret_label) (op:binop) (c1:comp) (c2:comp) :comp =
   | Xor                -> aux "PutXORGate" false
   | R_shift_l          -> o_app (o_str "logical_right_shift") [o_slabel l; c1; c2]
   | Pow                -> failwith ("Codegen cannot handle this secret binop: " ^ binop_to_string op)
-  | Tensor             -> failwith ("Codegen cannot handle this secret binop: " ^ binop_to_string op)
+  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith ("codegen (ABY): " ^ binop_to_string op ^ " requires CPPFLOAT or SECFLOAT")
                
 let o_pconditional (c1:comp) (c2:comp) (c3:comp) :comp =
   seq c1 (seq (o_str " ? ") (seq c2 (seq (o_str " : ") c3)))

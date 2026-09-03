@@ -82,8 +82,6 @@ type unop =
 type binop =
   (* Arithmetic *)
   | Sum | Sub | Mul | Div | Mod | Pow | Greater_than | Less_than | Is_equal | Greater_than_equal | Less_than_equal | R_shift_a | L_shift | Bitwise_and | Bitwise_or | Bitwise_xor
-  (* Arithmetic of Extended Reals *)
-  | Tensor
   (* Logical *)
   | And | Or | Xor | R_shift_l
   (* QLL *)
@@ -201,7 +199,7 @@ let binop_to_string (b:binop) :string =
   | Or -> "||"
   | Xor -> "xor"
   | R_shift_l -> ">>>"
-  | Tensor -> "tensor"
+  (* | Tensor -> "tensor" *)
   (* QLL *)
   | Otimes -> "<*>"
   | Otimes_par -> "<|>"

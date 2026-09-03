@@ -46,6 +46,7 @@ let o_punop :unop -> comp = function
   | U_minus -> o_str "-"
   | Bitwise_neg -> o_str "~"
   | Not -> o_str "!"
+  | Dual -> failwith "Dual depends on carrier: handled in o_expr"
                         
 let o_pbinop :binop -> comp = function
   | Sum          -> o_str "+"
@@ -68,7 +69,7 @@ let o_pbinop :binop -> comp = function
   | Or           -> o_str "||"
   | Xor          -> o_str "^"
   | R_shift_l    -> o_str ">>"
-  | Tensor       -> failwith "Tensor is not an infix C++ operator, so o_pbinop can't handle it"
+  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith "Tensor is not an infix C++ operator, so o_pbinop can't handle it"
 
 let o_hd_and_args (head:comp) (args:comp list) :comp =
   match args with
@@ -197,7 +198,7 @@ and o_expr (g:gamma) (e:expr) :comp =
               | R_shift_l -> o_app (o_str "public_lrshift") [o_expr e1; o_expr e2]
               | Pow -> o_app (o_str "pow") [o_expr e1; o_expr e2]
               (* ⨂ is not C++ multiplication: 0 ⨂ ∞ = 0, whereas 0.0 * INFINITY = NaN *)
-              | Tensor -> o_app (o_str "qll_tensor") [o_expr e1; o_expr e2]
+              | Otimes -> o_app (o_str "qll_tensor") [o_expr e1; o_expr e2]
               | _ -> seq (o_expr e1) (seq o_space (seq (o_pbinop op) (seq o_space (o_expr e2)))))
 
   | Binop (op, e1, e2, Some (Secret s)) -> o_secret_binop g op s e1 e2

@@ -97,6 +97,7 @@ let check_unop_label_is_consistent (e:expr) (op:unop) (l:label) :unit result =
      | U_minus -> Type_error ("Unary minus should have been desugared: " ^ expr_to_string e, e.metadata)
      | Bitwise_neg when l = Boolean -> Well_typed ()
      | Not when l = Boolean -> Well_typed ()
+     | Dual when l = Baba -> Well_typed ()
      | _ -> Type_error ("Unary operator expected a boolean label: " ^ expr_to_string e, e.metadata)
 
 (*
@@ -123,7 +124,6 @@ let check_binop_label_is_consistent (e:expr) (op:binop) (l:label) :unit result =
      | Bitwise_and when l = Boolean -> Well_typed ()
      | Bitwise_or when l = Boolean -> Well_typed ()
      | Bitwise_xor when l = Boolean -> Well_typed ()
-     
      | _ -> err
 
 let check_array_type_and_return_bt (e:expr) (t:typ) :eresult =
@@ -154,15 +154,15 @@ let check_expected_numeric_typ (e:expr) (t:typ) (l:label) :unit result =
   let err = Type_error ("Expression " ^ (expr_to_string e) ^ " should have either integer/floating type with label " ^ label_to_string l ^
                           ", instead got: " ^ typ_to_string t, e.metadata) in
   match t.data with
-  | Base (bt, Some lt) when (bt <> Bool && not (is_qll_bt) && lt = l)  -> Well_typed ()
+  | Base (bt, Some lt) when (bt <> Bool && not (is_qll_bt bt) && lt = l)  -> Well_typed ()
   | _ -> err
 
-(* ℝ⨂ := [0, ∞], the operand type of the QLL tensor operator ⨂ *)
-let check_expected_realmul_typ (e:expr) (t:typ) (l:label) :unit result =
+(* QLL type ⨂ *)
+let check_expected_qll_typ (e:expr) (t:typ) (l:label) :unit result =
   let err = Type_error ("Expression " ^ (expr_to_string e) ^ " should have type ℝ⨂ with label " ^ label_to_string l ^
                           ", instead got: " ^ typ_to_string t, e.metadata) in
   match t.data with
-  | Base (RealMul, Some lt) when lt = l -> Well_typed ()
+  | Base ((RealMul | RealAdd), Some lt) when lt = l -> Well_typed ()
   | _ -> err
 
 (*
@@ -212,6 +212,7 @@ let rec tc_expr (g:gamma) (e:expr) :eresult =
                           bind (match op with
                                 | Bitwise_neg -> check_expected_int_typ e1 t1 l
                                 | Not -> check_expected_bool_typ e1 t1 l
+                                | Dual -> check_expected_bool_typ e1 t1 l
                                 | _ -> Type_error ("Unexpected operator: " ^ unop_to_string op, e.metadata)) (fun _ -> Well_typed t1))))
 
   | Binop (op, e1, e2, lopt) ->
@@ -226,10 +227,10 @@ let rec tc_expr (g:gamma) (e:expr) :eresult =
                                                   match join_types t1 t2 with
                                                   | Some t -> Well_typed t
                                                   | None -> join_types_err e1 e2 t1 t2 e.metadata))
-                                 (* Tensor : ℝ⨂ × ℝ⨂ -> ℝ⨂ *)
-                                 | Tensor ->
-                                    bind (check_expected_realmul_typ e1 t1 l) (fun _ ->
-                                           bind (check_expected_realmul_typ e2 t2 l) (fun _ ->
+                                 (* additive reals and multiplicative real operators*)
+                                 | Otimes | Otimes_par | Oplus_p | Oplus_np ->
+                                    bind (check_expected_qll_typ e1 t1 l) (fun _ ->
+                                           bind (check_expected_qll_typ e2 t2 l) (fun _ ->
                                                   match join_types t1 t2 with
                                                   | Some t -> Well_typed t
                                                   | None -> join_types_err e1 e2 t1 t2 e.metadata))
@@ -243,9 +244,13 @@ let rec tc_expr (g:gamma) (e:expr) :eresult =
                                     bind (check_expected_int_typ e1 t1 l) (fun _ ->
                                            bind (check_expected_int_typ e2 t2 Public) (fun _ -> Well_typed t1))
                                  | Is_equal | Greater_than | Less_than | Greater_than_equal | Less_than_equal ->
-                                    bind (check_expected_ordered_typ e1 t1 l) (fun _ ->
-                                           bind (check_expected_ordered_typ e2 t2 l) (fun _ ->
-                                                  if is_baba_bt (get_bt t1) &&  is_baba_bt (get_bt t2) && (get_label t1 = Secret Baba) then
+                                   let check_cmp e t = 
+                                          if is_qll_bt (get_bt t) then check_expected_qll_typ e t l
+                                          else check_expected_numeric_typ e t l 
+                                   in
+                                   bind (check_cmp e1 t1) (fun _ ->
+                                           bind (check_cmp e2 t2) (fun _ ->
+                                                  if is_baba_bt (get_bt t1) && is_baba_bt (get_bt t2) && (get_label t1 = Secret Baba) then
                                                      Well_typed (Base (Bool, Some (Secret Boolean)) |> mk_syntax e.metadata)
                                                   else 
                                                     match join_types t1 t2 with
@@ -319,11 +324,11 @@ let rec check_type_well_formedness (g:gamma) (t:typ) :unit result =
   | Base (Int64, Some (Secret l)) -> if Config.get_bitlen () = 64 then check_int_label l else bitlen_err 64
   | Base (Float, Some (Secret l)) -> if l = Baba then Well_typed () else Type_error ("Float type can only be baba shared: " ^ (typ_to_string t), t.metadata)
   (*
-   * ℝ⨂ reuses the float sharing (Baba/fl), which the SECFLOAT and EMP backends
+   * RealMul/RealAdd reuses the float sharing (Baba/fl), which the SECFLOAT and EMP backends
    * already implement with a representation that has +∞. The ring backends
    * (ABY/CPPRING/SCI/PORTHOS/FSS) reject Baba outright, as they do for float.
    *)
-  | Base (RealMul, Some (Secret l)) -> if l = Baba then Well_typed () else Type_error ("ℝ⨂ can only be baba (fl) shared: " ^ (typ_to_string t), t.metadata)
+  | Base ((RealMul | RealAdd), Some (Secret l)) -> if l = Baba then Well_typed () else Type_error ("RealMul/RealAdd can only be baba (fl) shared: " ^ (typ_to_string t), t.metadata)
   | Base _ -> Well_typed ()
   | Array (_, bt, e) ->
      bind (check_type_well_formedness g bt) (fun _ ->

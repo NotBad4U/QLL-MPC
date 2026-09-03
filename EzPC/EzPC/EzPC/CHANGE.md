@@ -44,12 +44,12 @@ also sat on the path: `typeof_expr` (`tcenv.ml`) and `infer_binop_label`
 `ℝ⨂` is a **non-negative IEEE-754 float including the native `+∞`**. No
 `(value, is_infinity)` pair is needed. Each backend uses its natural width.
 
-| Backend | `ℝ⨂` representation | `⨂` compiles to |
-|---|---|---|
-| **CPPFLOAT** | `double` (binary64), `∞` = `(double)INFINITY` | `qll_tensor` (guarded) |
-| **SECFLOAT** | secret: `FPArray`; public: `float` | secret: `__fp_op->mul` (**no guard**); public: `qll_tensor` |
-| **EMP** | secret: `Float`; public: `float` | secret + public: `qll_tensor` (guarded) |
-| ABY, CPPRING, SCI, PORTHOS, FSS, OBLIVC | *unsupported* | explicit `failwith` pointing at CPPFLOAT |
+| Backend                                 | `ℝ⨂` representation                              | `⨂` compiles to                                                   |
+| --------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------- |
+| **CPPFLOAT**                      | `double` (binary64), `∞` = `(double)INFINITY` | `qll_tensor` (guarded)                                             |
+| **SECFLOAT**                      | secret:`FPArray`; public: `float`                | secret:`__fp_op->mul` (**no guard**); public: `qll_tensor` |
+| **EMP**                           | secret:`Float`; public: `float`                  | secret + public:`qll_tensor` (guarded)                             |
+| ABY, CPPRING, SCI, PORTHOS, FSS, OBLIVC | *unsupported*                                      | explicit`failwith` pointing at CPPFLOAT                            |
 
 ### Why SECFLOAT needs no guard
 

@@ -46,6 +46,7 @@ let o_punop :unop -> comp = function
   | U_minus -> o_str "-"
   | Bitwise_neg -> o_str "~"
   | Not -> o_str "!"
+  | Dual -> failwith "Dual depends on carrier: handled in o_expr"
                         
 let o_pbinop :binop -> comp = function
   | Sum          -> o_str "+"
@@ -68,7 +69,8 @@ let o_pbinop :binop -> comp = function
   | Or           -> o_str "||"
   | Xor          -> o_str "^"
   | R_shift_l    -> o_str ">>"
-  | Tensor       -> failwith "Tensor is not a supported binop in o_pbinop"
+  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith ("QLL operators are not infix C++; handled in o_expr")
+
 
 let o_hd_and_args (head:comp) (args:comp list) :comp =
   match args with
@@ -165,7 +167,7 @@ let rec o_secret_binop (g:gamma) (op:binop) (sl:secret_label) (e1:expr) (e2:expr
      * OR(x_z, y_z), so a zero operand forces a zero result whatever the other
      * operand is -- i.e. 0 ⨂ ∞ = 0 already holds, with no extra gates.
      *)
-    | Tensor -> "mul"
+    | Otimes -> "mul"
     | Div -> "div"
     | Less_than -> "LT"
     | Less_than_equal -> "LE"
@@ -206,7 +208,7 @@ and o_expr (g:gamma) (e:expr) :comp =
                * SECFLOAT), so unlike the secret path this one does need the
                * explicit guard: 0.0f * INFINITY is NaN.
                *)
-              | Tensor -> o_app (o_str "qll_tensor") [o_expr e1; o_expr e2]
+              | Otimes -> o_app (o_str "qll_tensor") [o_expr e1; o_expr e2]
               | _ -> seq (o_expr e1) (seq o_space (seq (o_pbinop op) (seq o_space (o_expr e2)))))
 
   | Binop (op, e1, e2, Some (Secret s)) -> o_secret_binop g op s e1 e2

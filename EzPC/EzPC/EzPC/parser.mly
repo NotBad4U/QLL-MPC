@@ -112,14 +112,14 @@ let match_stmt_option msg str =
 %left GREATER_THAN GREATER_THAN_EQUAL LESS_THAN LESS_THAN_EQUAL
 %left R_SHIFT_A L_SHIFT R_SHIFT_L
 %left SUM SUB
-%left OPLUS_P OPLUS_NP
+%left OPLUS_P OPLUS_NP (* \/ /\ *)
 %left MUL DIV MOD
-%left OTIMES OTIMES_PAR
+%left OTIMES OTIMES_PAR (* <*> <|> *)
 %left POW
 %nonassoc UNOP_ASSOC
 %nonassoc UNOP_SOME_ASSOC
 %nonassoc LBRACKET
-%nonassoc DUAL
+%nonassoc DUAL (* ^* *)
 
 %start program
 %type <Ast.program> program
@@ -232,8 +232,8 @@ expr:
   | e1 = expr; OTIMES ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Otimes,e1,e2,p)) $startpos $endpos }
   | e1 = expr; OTIMES_PAR ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Otimes_par,e1,e2,p)) $startpos $endpos }
   | e1 = expr; OPLUS_P ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Oplus_p,e1,e2,p)) $startpos $endpos }
-  | e1 = expr; OPLUS_NP ; p = option(preqel); e2 = expr; { astnd (Ast.Unop(Ast.Oplus_np,e1,e2,p)) $startpos $endpos }
-  | e1 = expr; DUAL ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Dual,e1,e2,p)) $startpos $endpos }
+  | e1 = expr; OPLUS_NP ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Oplus_np,e1,e2,p)) $startpos $endpos }
+  | e1 = expr; DUAL ; p = option(preqel); e2 = expr; { astnd (Ast.Unop(Ast.Dual,e1, None)) $startpos $endpos } %prec DUAL
   | e1 = expr; POW ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Pow,e1,e2,p)) $startpos $endpos }    
   | e1 = expr; DIV ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Div,e1,e2,p)) $startpos $endpos }    
   | e1 = expr; MOD ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Mod,e1,e2,p)) $startpos $endpos }    

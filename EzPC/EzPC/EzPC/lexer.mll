@@ -148,14 +148,14 @@ rule read =
   | "SERVER" { SERVER }
   | "CLIENT" { CLIENT }
   | "ALL" { ALL }
-  | "infm" { MREAL infinity }
-  | "infa" { AREAL infinity }
+  | "infm" { REALMUL infinity }
+  | "infa" { REALADD infinity }
   | id    { ID (Lexing.lexeme lexbuf) }
   | int { try INT32 (cvt_int32_literal (Lexing.lexeme lexbuf))
           with Failure _ -> raise (Error ("literal overflow int32")) }
   | flt { try FLOAT (cvt_float_literal (Lexing.lexeme lexbuf))
           with Failure _ -> raise (Error ("literal overflow float")) }
-  | flt "m" { try REALMUL (cvt_realmul_literal (Lexing.lexeme lexbuf))
+  | flt "m" { try REALMUL (cvt_real_literal (Lexing.lexeme lexbuf))
           with Failure _ -> raise (Error ("literal overflow realmul")) }
   | flt "a" {try REALADD (cvt_real_literal (Lexing.lexeme lexbuf))
           with Failure _ -> raise (Error ("literal overflow realadd")) }

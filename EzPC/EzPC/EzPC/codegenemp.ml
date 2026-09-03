@@ -46,6 +46,7 @@ let o_punop :unop -> comp = function
   | U_minus -> o_str "-"
   | Bitwise_neg -> o_str "~"
   | Not -> o_str "!"
+  | Dual -> o_str "^*"
                         
 let o_pbinop :binop -> comp = function
   | Sum          -> o_str "+"
@@ -68,7 +69,7 @@ let o_pbinop :binop -> comp = function
   | Or           -> o_str "||"
   | Xor          -> o_str "^"
   | R_shift_l    -> o_str ">>"
-  | Tensor       -> failwith "Tensor is not an infix C++ operator, so o_pbinop can't handle it"
+  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith "Tensor is not an infix C++ operator, so o_pbinop can't handle it"
 
 let o_hd_and_args (head:comp) (args:comp list) :comp =
   match args with
@@ -89,6 +90,7 @@ let o_sunop (l:secret_label) (op:unop) (c:comp) :comp =
     | U_minus -> failwith "Codegen: unary minus is not being produced by lexer or parser right now."
     | Bitwise_neg 
     | Not -> o_str ".operator!"
+    | Dual -> failwith ("codegen (EMP): " ^ unop_to_string op ^ " requires CPPFLOAT or SECFLOAT")
   in
   o_app (seq c c_op) []
   
@@ -131,7 +133,7 @@ let o_sbinop (l:secret_label) (op:binop) (c1:comp) (c2:comp) :comp =
    * emp's Float::operator* is a Bristol IEEE multiplier that returns inf for
    * 0 * inf (verified against emp-tool), so ⨂ needs an explicit zero guard.
    *)
-  | Tensor             -> if l==Baba then o_app (o_str "qll_tensor") [c1; c2] else unsup ()
+  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith ("codegen (EMP): QLL reals require CPPFLOAT or SECFLOAT.")
                
 let o_pconditional (c1:comp) (c2:comp) (c3:comp) :comp =
   seq c1 (seq (o_str " ? ") (seq c2 (seq (o_str " : ") c3)))
@@ -229,7 +231,7 @@ let rec o_expr (g:gamma) (e:expr) :comp =
      o_paren (match op with
               | Pow -> o_app (o_str "pow") [o_expr e1; o_expr e2]
               (* public ℝ⨂ is a plain C++ float, where 0.0f * INFINITY is NaN *)
-              | Tensor -> o_app (o_str "qll_tensor") [o_expr e1; o_expr e2]
+              | Otimes -> o_app (o_str "qll_tensor") [o_expr e1; o_expr e2]
               | _ -> seq (o_expr e1) (seq o_space (seq (o_pbinop op) (seq o_space (o_expr e2)))))
 
   | Binop (op, e1, e2, Some (Secret s)) -> o_sbinop s op (o_expr e1) (o_expr e2)

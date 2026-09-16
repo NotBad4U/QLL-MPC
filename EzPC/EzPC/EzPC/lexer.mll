@@ -70,6 +70,7 @@ let all = ['a'-'z' 'A'-'Z' '0'-'9']
 let id = letter all*
 let bool = "true" | "false"
 let eol = '\r' | '\n' | "\r\n"
+let real = int ('.' digit*)? (['e' 'E'] ['+' '-']? int)? (* Handles 2m, 2.0, and 2e-3m *)
 
 rule read = 
   parse
@@ -101,6 +102,7 @@ rule read =
   | "\\/" { OPLUS_P } (* additive p-sum *)
   | "/\\" { OPLUS_NP } (* additive harmonic p-sum *)
   | "^*"  { DUAL } (* inverse *)
+  | "->" { IMPLIES } (* implies *)
   | ">>"  { R_SHIFT_A }
   | "<<"  { L_SHIFT }
   | "&"   { BITWISE_AND }
@@ -125,7 +127,10 @@ rule read =
   | "bool"  { TBOOL }
   | "areal" { TREALADD }
   | "mreal" { TREALMUL }
-  | "void" {TVOID }
+  | "toAdd" { TO_ADD }
+  | "toMul" { TO_MUL }
+  | "nanm" | "nana" {raise (Error "NaN not in QLL") }
+  | "void" { TVOID }
   | "true" { TRUE }
   | "false" { FALSE }
   | "al" { ARITHMETIC }
@@ -155,9 +160,9 @@ rule read =
           with Failure _ -> raise (Error ("literal overflow int32")) }
   | flt { try FLOAT (cvt_float_literal (Lexing.lexeme lexbuf))
           with Failure _ -> raise (Error ("literal overflow float")) }
-  | flt "m" { try REALMUL (cvt_real_literal (Lexing.lexeme lexbuf))
+  | real "m" { try REALMUL (cvt_real_literal (Lexing.lexeme lexbuf))
           with Failure _ -> raise (Error ("literal overflow realmul")) }
-  | flt "a" {try REALADD (cvt_real_literal (Lexing.lexeme lexbuf))
+  | real "a" {try REALADD (cvt_real_literal (Lexing.lexeme lexbuf))
           with Failure _ -> raise (Error ("literal overflow realadd")) }
   | int "u" { try UINT32 (cvt_uint32_literal (Lexing.lexeme lexbuf))
           with Failure _ -> raise (Error ("literal overflow uint32")) }

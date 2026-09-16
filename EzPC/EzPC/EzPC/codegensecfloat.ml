@@ -46,7 +46,7 @@ let o_punop :unop -> comp = function
   | U_minus -> o_str "-"
   | Bitwise_neg -> o_str "~"
   | Not -> o_str "!"
-  | Dual -> failwith "Dual depends on carrier: handled in o_expr"
+  | Dual | ToAdd | ToMul -> failwith "Dual depends on carrier: handled in o_expr"
                         
 let o_pbinop :binop -> comp = function
   | Sum          -> o_str "+"
@@ -69,7 +69,7 @@ let o_pbinop :binop -> comp = function
   | Or           -> o_str "||"
   | Xor          -> o_str "^"
   | R_shift_l    -> o_str ">>"
-  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith ("QLL operators are not infix C++; handled in o_expr")
+  | Otimes | Otimes_par | Oplus_p | Oplus_np | Implies -> failwith ("QLL operators are not infix C++; handled in o_expr")
 
 
 let o_hd_and_args (head:comp) (args:comp list) :comp =

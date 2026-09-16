@@ -46,7 +46,7 @@ let o_punop :unop -> comp = function
   | U_minus -> o_str "-"
   | Bitwise_neg -> o_str "~"
   | Not -> o_str "!"
-  | Dual -> o_str "^*"
+  | Dual | ToAdd | ToMul -> o_str "^*"
                         
 let o_pbinop :binop -> comp = function
   | Sum          -> o_str "+"
@@ -69,7 +69,7 @@ let o_pbinop :binop -> comp = function
   | Or           -> o_str "||"
   | Xor          -> o_str "^"
   | R_shift_l    -> o_str ">>"
-  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith "Tensor is not an infix C++ operator, so o_pbinop can't handle it"
+  | Otimes | Otimes_par | Oplus_p | Oplus_np | Implies -> failwith "Tensor is not an infix C++ operator, so o_pbinop can't handle it"
 
 let o_hd_and_args (head:comp) (args:comp list) :comp =
   match args with
@@ -90,7 +90,7 @@ let o_sunop (l:secret_label) (op:unop) (c:comp) :comp =
     | U_minus -> failwith "Codegen: unary minus is not being produced by lexer or parser right now."
     | Bitwise_neg 
     | Not -> o_str ".operator!"
-    | Dual -> failwith ("codegen (EMP): " ^ unop_to_string op ^ " requires CPPFLOAT or SECFLOAT")
+    | Dual | ToAdd | ToMul -> failwith ("codegen (EMP): " ^ unop_to_string op ^ " requires CPPFLOAT or SECFLOAT")
   in
   o_app (seq c c_op) []
   
@@ -133,7 +133,7 @@ let o_sbinop (l:secret_label) (op:binop) (c1:comp) (c2:comp) :comp =
    * emp's Float::operator* is a Bristol IEEE multiplier that returns inf for
    * 0 * inf (verified against emp-tool), so ⨂ needs an explicit zero guard.
    *)
-  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith ("codegen (EMP): QLL reals require CPPFLOAT or SECFLOAT.")
+  | Otimes | Otimes_par | Oplus_p | Oplus_np | Implies -> failwith ("codegen (EMP): QLL reals require CPPFLOAT or SECFLOAT.")
                
 let o_pconditional (c1:comp) (c2:comp) (c3:comp) :comp =
   seq c1 (seq (o_str " ? ") (seq c2 (seq (o_str " : ") c3)))

@@ -45,7 +45,7 @@ let o_punop :unop -> comp = function
   | U_minus -> o_str "-"
   | Bitwise_neg -> o_str "~"
   | Not -> o_str "!"
-  | Dual -> o_str "^*"
+  | Dual | ToAdd | ToMul -> o_str "^*"
                         
 let o_pbinop :binop -> comp = function
   | Sum          -> o_str "+"
@@ -68,7 +68,7 @@ let o_pbinop :binop -> comp = function
   | Or           -> o_str "||"
   | Xor          -> o_str "^"
   | R_shift_l    -> o_str ">>"
-  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith ("codegen (porthos): QLL reals require CPPFLOAT or SECFLOAT.")
+  | Otimes | Otimes_par | Oplus_p | Oplus_np | Implies -> failwith ("codegen (porthos): QLL reals require CPPFLOAT or SECFLOAT.")
 
 let o_hd_and_args (head:comp) (args:comp list) :comp =
   match args with
@@ -89,7 +89,7 @@ let o_sunop (l:secret_label) (op:unop) (c:comp) :comp =
   | U_minus -> failwith "Codegen: unary minus is not being produced by lexer or parser right now."
   | Bitwise_neg -> err_unsupp "Bitwise_neg"
   | Not -> err_unsupp "Boolean_not"
-  | Dual -> failwith "Codegen(porthos) requires CPPFLOAT or SECFLOAT."
+  | Dual | ToAdd | ToMul -> failwith "Codegen(porthos) requires CPPFLOAT or SECFLOAT."
   
 let o_sbinop (l:secret_label) (op:binop) (c1:comp) (c2:comp) :comp =
   let err (s:string) = failwith ("Codegen: Operator: " ^ s ^ " should have been desugared") in
@@ -116,7 +116,7 @@ let o_sbinop (l:secret_label) (op:binop) (c1:comp) (c2:comp) :comp =
   | Xor                -> err_unsupp "Boolean_xor"
   | R_shift_l          -> err_unsupp "Logical_right_shift"
   | Pow                -> err_unsupp "Pow"
-  | Otimes | Otimes_par | Oplus_p | Oplus_np -> err_unsupp "codegen (EMP): QLL reals require CPPFLOAT or SECFLOAT."
+  | Otimes | Otimes_par | Oplus_p | Oplus_np | Implies -> err_unsupp "codegen (EMP): QLL reals require CPPFLOAT or SECFLOAT."
 
                
 let o_pconditional (c1:comp) (c2:comp) (c3:comp) :comp =

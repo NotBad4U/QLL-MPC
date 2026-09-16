@@ -43,7 +43,7 @@ let rec infer_unop_label (g:gamma) (op:unop) (e:expr) (lopt:label option) (r:ran
      | Some Public -> Unop (op, e, Some Public)
      | Some _ ->
         (match op with
-        | Dual -> Unop (op, e, Some (Secret Baba))
+        | Dual | ToAdd | ToMul-> Unop (op, e, Some (Secret Baba))
         | _ -> Unop (op, e, Some (Secret Boolean)))
 
 and infer_binop_label (g:gamma) (op:binop) (e1:expr) (e2:expr) (lopt:label option) (rng:range) :expr' =
@@ -69,7 +69,7 @@ and infer_binop_label (g:gamma) (op:binop) (e1:expr) (e2:expr) (lopt:label optio
         match op with
         | Sum | Sub | Div | Mod -> set_default_label None
         (* ⨂ operates on ℝ⨂, which reuses the float (Baba) sharing when secret *)
-        | Otimes | Otimes_par | Oplus_p | Oplus_np -> Binop (op, e1, e2, Some (Secret Baba))
+        | Otimes | Otimes_par | Oplus_p | Oplus_np | Implies-> Binop (op, e1, e2, Some (Secret Baba))
         | Mul -> 
           if is_float_bt (get_bt t1) ||  is_float_bt (get_bt t2)
             then Binop (op, e1, e2, Some (Secret Baba))

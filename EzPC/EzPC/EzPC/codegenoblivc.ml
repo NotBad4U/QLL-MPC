@@ -54,7 +54,7 @@ let o_unop :unop -> comp = function
   | U_minus -> o_str "-"
   | Bitwise_neg -> o_str "~"
   | Not -> o_str "!"
-  | Dual -> o_str "^*"
+  | Dual | ToAdd | ToMul -> o_str "^*"
                         
 let o_binop :binop -> comp = function
   | Sum          -> o_str "+"
@@ -77,7 +77,7 @@ let o_binop :binop -> comp = function
   | Or           -> o_str "|"
   | Xor          -> o_str "^"
   | R_shift_l    -> o_str ">>"
-  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith ("codegen (OBlivC): QLL reals require CPPFLOAT or SECFLOAT.")
+  | Otimes | Otimes_par | Oplus_p | Oplus_np | Implies -> failwith ("codegen (OBlivC): QLL reals require CPPFLOAT or SECFLOAT.")
 
 let o_conditional (c1:comp) (c2:comp) (c3:comp) :comp =
   seq c1 (seq (o_str " ? ") (seq c2 (seq (o_str " : ") c3)))

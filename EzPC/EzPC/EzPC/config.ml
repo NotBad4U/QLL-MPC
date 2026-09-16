@@ -58,6 +58,7 @@ type configuration = {
     sci_backend: sci_backend_type; 
     sf: int;
     libmode: bool;
+    qll_p: float;
   }
 
 let c_private :configuration ref = ref {
@@ -74,6 +75,7 @@ let c_private :configuration ref = ref {
                                        sci_backend = OT;
                                        sf = 0;
                                        libmode = false;
+                                       qll_p = 1.0;
                                        }
 
 let set_bitlen (bitlen:int) :unit = 
@@ -133,3 +135,10 @@ let is_codegen_float () :bool =
 let set_libmode () :unit = c_private := { !c_private with libmode = true }
 
 let get_libmode () :bool = !c_private.libmode
+
+(* Qll p -hardness/softness *)
+let set_qll_p (p:float) :unit = 
+  if not (p > 0.0) then failwith "--qll-p must be greater than zero";
+  c_private := { !c_private with qll_p = p}
+
+let get_qll_p () :float = !c_private.qll_p

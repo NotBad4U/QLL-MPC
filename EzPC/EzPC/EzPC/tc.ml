@@ -97,7 +97,7 @@ let check_unop_label_is_consistent (e:expr) (op:unop) (l:label) :unit result =
      | U_minus -> Type_error ("Unary minus should have been desugared: " ^ expr_to_string e, e.metadata)
      | Bitwise_neg when l = Boolean -> Well_typed ()
      | Not when l = Boolean -> Well_typed ()
-     | Dual when l = Baba -> Well_typed ()
+     | (Dual | ToAdd | ToMul) when l = Baba -> Well_typed ()
      | _ -> Type_error ("Unary operator expected a boolean label: " ^ expr_to_string e, e.metadata)
 
 (*
@@ -112,7 +112,7 @@ let check_binop_label_is_consistent (e:expr) (op:binop) (l:label) :unit result =
      | Sum | Sub | Div ->  Well_typed ()
      | Mul when (l = Baba  || l = Arithmetic) -> Well_typed ()
      (* ⨂ operates on ℝ⨂, which is baba shared when secret *)
-     | Otimes | Otimes_par | Oplus_p | Oplus_p when l = Baba -> Well_typed()
+     | Otimes | Otimes_par | Oplus_p | Oplus_np when l = Baba -> Well_typed()
      | Mod when (l = Boolean  || l = Arithmetic) -> Well_typed ()
      | Greater_than | Less_than | Greater_than_equal | Less_than_equal | Is_equal  -> Well_typed ()
      | L_shift when l = Boolean -> Well_typed ()
@@ -212,8 +212,15 @@ let rec tc_expr (g:gamma) (e:expr) :eresult =
                           bind (match op with
                                 | Bitwise_neg -> check_expected_int_typ e1 t1 l
                                 | Not -> check_expected_bool_typ e1 t1 l
-                                | Dual -> check_expected_bool_typ e1 t1 l
-                                | _ -> Type_error ("Unexpected operator: " ^ unop_to_string op, e.metadata)) (fun _ -> Well_typed t1))))
+                                | Dual -> check_expected_qll_typ e1 t1 l
+                                | ToAdd -> check_expected_typ e1 t1 (Base (RealMul, Some l) |> mk_syntax e.metadata)
+                                | ToMul -> check_expected_typ e1 t1 (Base (RealAdd, Some l) |> mk_syntax e.metadata)
+                                | _ -> Type_error ("Unexpected operator: " ^ unop_to_string op, e.metadata)) (fun _ -> 
+                                   let result_type = match op with 
+                                   | ToAdd -> (Base (RealAdd, Some l) |> mk_syntax e.metadata)
+                                   | ToMul -> (Base (RealMul, Some l) |> mk_syntax e.metadata)
+                                   | _ -> t1
+                                   in Well_typed result_type))))
 
   | Binop (op, e1, e2, lopt) ->
      bind (check_option_is_set (expr_to_string e) lopt e.metadata) (fun l ->
@@ -228,7 +235,7 @@ let rec tc_expr (g:gamma) (e:expr) :eresult =
                                                   | Some t -> Well_typed t
                                                   | None -> join_types_err e1 e2 t1 t2 e.metadata))
                                  (* additive reals and multiplicative real operators*)
-                                 | Otimes | Otimes_par | Oplus_p | Oplus_np ->
+                                 | Otimes | Otimes_par | Oplus_p | Oplus_np | Implies ->
                                     bind (check_expected_qll_typ e1 t1 l) (fun _ ->
                                            bind (check_expected_qll_typ e2 t2 l) (fun _ ->
                                                   match join_types t1 t2 with

@@ -86,7 +86,7 @@ let match_stmt_option msg str =
 %token EQUALS
 %token BITWISE_NEG NOT
 %token SUM SUB MUL DIV MOD POW R_SHIFT_A L_SHIFT BITWISE_AND BITWISE_OR BITWISE_XOR AND OR XOR R_SHIFT_L
-%token OTIMES OTIMES_PAR OPLUS_P OPLUS_NP DUAL
+%token OTIMES OTIMES_PAR OPLUS_P OPLUS_NP DUAL IMPLIES TO_ADD TO_MUL
 %token LESS_THAN GREATER_THAN IS_EQUAL GREATER_THAN_EQUAL LESS_THAN_EQUAL
 %token SUBSUMPTION FOR WHILE
 %token EOF
@@ -102,6 +102,7 @@ let match_stmt_option msg str =
 %nonassoc THEN
 %nonassoc ELSE
 %nonassoc QUESTION_MARK
+%right IMPLIES (* -> *)
 %left OR
 %left XOR
 %left AND
@@ -233,7 +234,8 @@ expr:
   | e1 = expr; OTIMES_PAR ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Otimes_par,e1,e2,p)) $startpos $endpos }
   | e1 = expr; OPLUS_P ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Oplus_p,e1,e2,p)) $startpos $endpos }
   | e1 = expr; OPLUS_NP ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Oplus_np,e1,e2,p)) $startpos $endpos }
-  | e1 = expr; DUAL ; p = option(preqel); e2 = expr; { astnd (Ast.Unop(Ast.Dual,e1, None)) $startpos $endpos } %prec DUAL
+  | e1 = expr; IMPLIES ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Otimes_par, astnd (Ast.Unop(Ast.Dual, e1, None)) $startpos(e1) $endpos(e1), e2,p)) $startpos $endpos }
+  | e1 = expr; DUAL ; { astnd (Ast.Unop(Ast.Dual,e1, None)) $startpos $endpos }
   | e1 = expr; POW ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Pow,e1,e2,p)) $startpos $endpos }    
   | e1 = expr; DIV ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Div,e1,e2,p)) $startpos $endpos }    
   | e1 = expr; MOD ; p = option(preqel); e2 = expr; { astnd (Ast.Binop(Ast.Mod,e1,e2,p)) $startpos $endpos }    
@@ -259,6 +261,8 @@ expr_l:
 unop:
   | BITWISE_NEG { Ast.Bitwise_neg }
   | NOT { Ast.Not }
+  | TO_ADD { Ast.ToAdd }
+  | TO_MUL { Ast.ToMul }
 
 preqel:
   | UNDERSCORE; l = label;  {l}

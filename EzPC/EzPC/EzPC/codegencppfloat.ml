@@ -47,6 +47,8 @@ let o_punop :unop -> comp = function
   | Bitwise_neg -> o_str "~"
   | Not -> o_str "!"
   | Dual -> failwith "Dual depends on carrier: handled in o_expr"
+  | ToAdd -> failwith "ToAdd depends on carrier: handled in o_expr"
+  | ToMul -> failwith "ToMul depends on carrier: handled in o_expr"
                         
 let o_pbinop :binop -> comp = function
   | Sum          -> o_str "+"
@@ -69,7 +71,11 @@ let o_pbinop :binop -> comp = function
   | Or           -> o_str "||"
   | Xor          -> o_str "^"
   | R_shift_l    -> o_str ">>"
-  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith "Tensor is not an infix C++ operator, so o_pbinop can't handle it"
+  | Otimes       -> o_str "<*>"
+  | Otimes_par   -> o_str "<|>"
+  | Oplus_p      -> o_str "\\/"
+  | Oplus_np     -> o_str "/\\"
+  | Implies      -> o_str "->"
 
 let o_hd_and_args (head:comp) (args:comp list) :comp =
   match args with
@@ -136,7 +142,7 @@ let basetyp_to_cpptyp (t:base_type) : string =
     | Int64 -> "int64_t"
     | Float -> "float"
     | Bool -> "bool"
-    | RealAdd -> "float"
+    | RealAdd -> "double"
     (* ℝ⨂ := [0, ∞] is a non-negative IEEE-754 binary64, with native +∞ *)
     | RealMul -> "double"
 
@@ -150,10 +156,34 @@ let basetype_to_secfloat (t:base_type) :string =
   | Bool -> "bool"
   | RealAdd | RealMul -> err_no_secret_real t
 
-
 let basetype_to_secfloat_backend (t:base_type) :string = "__" ^ (basetype_to_secfloat t) ^ "_op"
 
 let basetype_to_secfloat_pub (t:base_type) :string = "__" ^ (basetype_to_secfloat t) ^ "_pub"
+
+(* Connect Qll operators to C++ helper code *)
+let qll_carrier (g:gamma) (e:expr) :base_type = e |> typeof_expr g |> get_opt |> get_bt_and_label |> fst
+
+let qll_binop_fn (bt:base_type) (op:binop) :string = 
+  let name = 
+    match op with
+    | Otimes -> "tensor"
+    | Otimes_par -> "par"
+    | Oplus_p -> "psum"
+    | Oplus_np -> "hpsum"
+    | _ -> failwith ("qll binop not a QLL connective" ^ binop_to_string op)
+  in
+  match bt with 
+  | RealMul -> "qll_" ^ name
+  | RealAdd -> "qll_add_" ^ name
+  | _ -> failwith ("QLL connective expects RealAdd or RealMul")
+
+let qll_unop_fn( bt:base_type) (op:unop) :string =
+  match op, bt with
+  | Dual, RealMul -> "qll_dual"
+  | Dual, RealAdd -> "qll_add_dual"
+  | ToAdd, _ -> "qll_to_add"
+  | ToMul, _ -> "qll_to_mul"
+  | _ -> failwith ("qll connectives expects RealAdd or RealMul")
 
 let rec o_secret_binop (g:gamma) (op:binop) (sl:secret_label) (e1:expr) (e2:expr) :comp =
   let backend = e1 |> typeof_expr g |> get_opt |> get_bt_and_label |> fst |> basetype_to_secfloat_backend in
@@ -186,8 +216,11 @@ and o_expr (g:gamma) (e:expr) :comp =
   | Const (FloatC f) -> o_float f
   | Const (BoolC b) -> o_bool b
   | Const (RealMulC f) -> o_realmul f
+  | Const (RealAddC f) -> o_str (Float.to_string f)
 
   | Var s -> o_var s
+
+  | Unop ((Dual | ToAdd | ToMul) as op, e1, Some Public) -> o_app (o_str (qll_unop_fn (qll_carrier g e1) op)) [o_expr e1]
 
   | Unop (op, e, Some Public) -> seq (o_punop op) (seq o_space (o_expr e))
   
@@ -198,7 +231,7 @@ and o_expr (g:gamma) (e:expr) :comp =
               | R_shift_l -> o_app (o_str "public_lrshift") [o_expr e1; o_expr e2]
               | Pow -> o_app (o_str "pow") [o_expr e1; o_expr e2]
               (* ⨂ is not C++ multiplication: 0 ⨂ ∞ = 0, whereas 0.0 * INFINITY = NaN *)
-              | Otimes -> o_app (o_str "qll_tensor") [o_expr e1; o_expr e2]
+              | Otimes | Otimes_par | Oplus_p | Oplus_np -> o_app (o_str (qll_binop_fn (qll_carrier g e1) op)) [o_expr e1; o_expr e2]
               | _ -> seq (o_expr e1) (seq o_space (seq (o_pbinop op) (seq o_space (o_expr e2)))))
 
   | Binop (op, e1, e2, Some (Secret s)) -> o_secret_binop g op s e1 e2
@@ -724,9 +757,48 @@ static inline void qll_read_realmul(istream &is, double &out) {\n\
 }\n\
 \n
 "
-                                   
+
+(* literal for p; inf selects min/max *)
+let o_qll_p(p:float) :string = if p = Float.infinity then "INFINITY" else sprintf "%.17g" p
+
+(* qll c++ code *)
+(* need to add: qll_tensor, qll_par, qll_psum, qll_hpsum, qll_to_add, qll_to_mul, and add domains of same *)
+let qll_prelude (p:float) :string = "
+/*
+* QLL Connectives
+*/
+
+static const double qll_p = " ^ o_qll_p p ^ " ;
+
+/* Dual */
+static inline double qll_dual(double a) {return 1.0 / a ; }\n\
+static inline double qll_add_dual(double a) {return -a ;}\n\
+
+/* Multiplicative tensor from above */
+static inline double qll_add_tensor(double a, double b) { return a + b ; }
+
+/* Par */
+static inline double qll_par(double a, double b){ return a * b ; }
+static inline double qll_add_par(double a, double b){ return a + b ;}
+
+/* P-Sum */
+static inline double qll_psum(double a, double b){ return pow((pow(a, qll_p) + pow(b, qll_p)), 1.0 /qll_p) ;}
+static inline double qll_add_psum(double a, double b){ return -log(exp(-qll_p * a) + exp(-qll_p * b))/ qll_p ; }
+
+/* Harmonic P-Sum */
+static inline double qll_hpsum(double a, double b){ return pow((pow(a, -qll_p) + pow(b, -qll_p)), -1.0 /qll_p) ;}
+static inline double qll_add_hpsum(double a, double b){ return log(exp(qll_p * a) + exp(qll_p * b))/ qll_p ; }
+
+/* To Add */
+static inline double qll_to_add(double a){return -log(a) ;}
+
+/* To Mul */
+static inline double qll_to_mul(double a){return 1/exp(a) ;}
+"
+
+
 let o_one_program ((globals, main):global list * codegen_stmt) (ofname:string) :unit =
-  let prelude = o_str prelude_string
+  let prelude = seq (o_str prelude_string) (o_str (qll_prelude (Config.get_qll_p ())))
   in
   let main_header = o_str
 "\n\nint main (int __argc, char **__argv) {\n\

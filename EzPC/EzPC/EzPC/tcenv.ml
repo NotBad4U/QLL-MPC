@@ -137,10 +137,13 @@ let rec typeof_expr (g:gamma) (e:expr) :typ option =
   | Role _ -> typeof_role e.metadata |> some
   | Const c -> typeof_const c e.metadata |> some
   | Var x -> lookup_variable g x
+  | Unop ((ToAdd | ToMul) as op, _, lopt )->
+    let bt = if op = ToAdd then RealAdd else RealMul in
+      Some (Base (bt, lopt) |> mk_syntax e.metadata)
   | Unop (_, e, _) -> typeof_expr g e
   | Binop (op, e1, e2, lopt) ->
      (match op with
-      | Sum | Sub | Mul | Div | Mod | Pow | Bitwise_and | Bitwise_or | Bitwise_xor | Otimes | Otimes_par | Oplus_p | Oplus_np ->
+      | Sum | Sub | Mul | Div | Mod | Pow | Bitwise_and | Bitwise_or | Bitwise_xor | Otimes | Otimes_par | Oplus_p | Oplus_np | Implies ->
          map_opt (typeof_expr g e1) (fun t1 -> map_opt (typeof_expr g e2) (fun t2 -> join_types t1 t2)) |> double_opt |> double_opt
       | R_shift_a | L_shift | R_shift_l -> typeof_expr g e1
       | Greater_than | Less_than | Is_equal | Greater_than_equal | Less_than_equal ->

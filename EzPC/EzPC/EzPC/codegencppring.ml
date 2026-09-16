@@ -46,6 +46,8 @@ let o_punop :unop -> comp = function
   | Bitwise_neg -> o_str "~"
   | Not -> o_str "!"
   | Dual -> o_str "^*"
+  | ToAdd -> o_str "toAdd"
+  | ToMul -> o_str "toMul"
 
 (*
  * ABY doesn't like circ->PutINVGate where circ:Circuit*, so we need to coerce it to BooleanCircuit*
@@ -102,7 +104,7 @@ let o_pbinop (op:binop) (e1comp:comp) (e2comp:comp) : comp =
    * there is no fixed-point scale and no float support, so an IEEE-754 double --
    * and in particular its +∞ bit pattern -- has no meaning as a ring element.
    *)
-  | Otimes | Otimes_par | Oplus_p | Oplus_np -> err_unhandled "Tensor (ℝ⨂ is not representable in a ring; use --codegen CPPFLOAT)"
+  | Otimes | Otimes_par | Oplus_p | Oplus_np | Implies -> err_unhandled "(ℝ⨂ is not representable in a ring; use --codegen CPPFLOAT)"
 
 let o_cbfunction_maybe_coerce (coerce:bool) (l:secret_label) (f:comp) (args:comp list) :comp =
   o_app (seq (o_slabel_maybe_coerce coerce l) (seq (o_str "->") f)) args
@@ -115,7 +117,7 @@ let o_sunop (l:secret_label) (op:unop) (c:comp) :comp =
     | U_minus -> failwith "Codegen: unary minus is not being produced by lexer or parser right now."
     | Bitwise_neg 
     | Not -> o_str "PutINVGate"
-    | Dual -> failwith ("codegen (ABY): " ^ unop_to_string op ^ " requires CPPFLOAT or SECFLOAT.")
+    | Dual | ToAdd | ToMul -> failwith ("codegen (ABY): " ^ unop_to_string op ^ " requires CPPFLOAT or SECFLOAT.")
   in
   o_cbfunction_maybe_coerce true l c_op [c]
   
@@ -143,7 +145,7 @@ let o_sbinop (l:secret_label) (op:binop) (c1:comp) (c2:comp) :comp =
   | Xor                -> aux "PutXORGate" false
   | R_shift_l          -> o_app (o_str "logical_right_shift") [o_slabel l; c1; c2]
   | Pow                -> failwith ("Codegen cannot handle this secret binop: " ^ binop_to_string op)
-  | Otimes | Otimes_par | Oplus_p | Oplus_np -> failwith ("Codegen cannot handle this secret binop: " ^ binop_to_string op)
+  | Otimes | Otimes_par | Oplus_p | Oplus_np | Implies -> failwith ("Codegen cannot handle this secret binop: " ^ binop_to_string op)
                
 let o_pconditional (c1:comp) (c2:comp) (c3:comp) :comp =
   seq c1 (seq (o_str " ? ") (seq c2 (seq (o_str " : ") c3)))

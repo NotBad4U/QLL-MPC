@@ -23,6 +23,10 @@ extern void SubtractOne(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
 
 (* Functions needed in backprop *)
 extern void getOutDer(int32_pl s1, int32_pl s2, float_fl[s1][s2] batchSoft, float_fl[s1][s2] lab, float_fl[s1][s2] der) ;
+
+extern void getQLLOutDer(int32_pl s1, int32_pl s2, float p, float_fl[s1][s2] logits, float_fl[s1][s2] labels, float_fl[s1][s2] der) ;
+extern void computeQLLLoss(int32_pl s1, int32_pl s2, float p, float_fl[s1][s2] labels, float_fl[s1][s2] logits, float_fl[s1][s2] loss) ;
+
 extern void getBiasDer(int32_pl s1, int32_pl s2, float_fl[s1][s2] der, float_fl[s2] biasDer) ;
 
 (* Functioned needed in loss computation *)

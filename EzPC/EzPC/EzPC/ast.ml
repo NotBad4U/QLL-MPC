@@ -78,6 +78,7 @@ type unop =
   | Not
   (* QLL inverse *)
   | Dual (* 1/a for RealMul, -a for RealAdd *)
+  | ToAdd | ToMul 
 
 type binop =
   (* Arithmetic *)
@@ -87,6 +88,7 @@ type binop =
   (* QLL *)
   | Otimes | Otimes_par (* multiplicative: tensor/par (a mult_par b) *)
   | Oplus_p | Oplus_np (* additives: p-sum/harmonic p-sum *)
+  | Implies
 
 type var = {
     name: string;
@@ -176,6 +178,8 @@ let unop_to_string (u:unop) :string =
   | Not -> "!"
   (* QLL *)
   | Dual -> "^*" (* inverse *)
+  | ToAdd -> "toAdd"
+  | ToMul -> "toMul"
             
 let binop_to_string (b:binop) :string =
   match b with
@@ -199,12 +203,12 @@ let binop_to_string (b:binop) :string =
   | Or -> "||"
   | Xor -> "xor"
   | R_shift_l -> ">>>"
-  (* | Tensor -> "tensor" *)
   (* QLL *)
   | Otimes -> "<*>"
   | Otimes_par -> "<|>"
   | Oplus_p -> "\\/"
   | Oplus_np -> "/\\"
+  | Implies -> "->"
               
 let rec expr_to_string (e:expr) :string =
   let brak (s:string) :string = "(" ^ s ^ ")" in

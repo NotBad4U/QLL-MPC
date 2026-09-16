@@ -153,6 +153,7 @@ let specs = Arg.align [
                                                    | _ -> failwith "Invalid backend type"),
                  "SCI Backend Type (OT or HE, default OT).");
                 ("--sf", Arg.Int Config.set_sf, "Scale factor to be used in compilation. Valid only for PORTHOS.");
+                ("--qll-p", Arg.Float Config.set_qll_p, "Softness p > 0 of QLL shared by whole program, default 1");
                 ("--l", Arg.Unit Config.set_libmode, "Dump library (should not contain main function, works only for FSS Mode)")
               ]
 let _ =

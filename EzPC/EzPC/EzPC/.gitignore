@@ -4,3 +4,6 @@ _build
 *.cpp
 ezpc
 *.pdf
+ABY/
+build/
+!examples/yao_millioinare.ezpc

@@ -192,6 +192,11 @@ void AllOneDividedBySizeArray(int32_t s, vector<FPArray> &inArr) ;
 
 void getOutDer(int32_t s1, int32_t s2, vector<vector<FPArray>> &P, vector<vector<FPArray>> &Phat, vector<vector<FPArray>> &der);
 
+/* QLL spec, label has top logit */
+void getQLLOutDer(int32_t s1, int32_t s2, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>> &Z, vector<vector<FPArray>> &Y, vector<vector<FPArray>> &der);
+void computeQLLLoss(int32_t s1, int32_t s2, int32_t s3, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>> &Y, vector<vector<FPArray>> &Z, vector<FPArray> &loss);
+void Pow(int32_t s1, vector<FPArray> &arr, float p, vector<FPArray> &outArr);
+
 void MatMul(int32_t m, int32_t n, int32_t p,
 			vector<vector<FPArray>> &A,
 			vector<vector<FPArray>> &B,

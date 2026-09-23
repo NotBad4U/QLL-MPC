@@ -939,31 +939,31 @@ FPArray FPOp::mul(const FPArray &x, const FPArray &y, bool check_bounds) {
   BoolArray msb_y_m = bool_op->NOT(y_z);
 
   /* FixArray ret_m = fix->mul(x_m, y_m, 2 * x.m_bits + 2, all_1.data, all_1.data); */
-  FixArray ret_m = fix->mul(x_m, y_m, 2 * x.m_bits + 2, msb_x_m.data, msb_y_m.data);
+  FixArray ret_m = fix->mul(x_m, y_m, 2 * x.m_bits + 2, msb_x_m.data, msb_y_m.data); // line 2
   ret_m = fix->truncate_with_sticky_bit(ret_m, x.m_bits - 2);
 
-  FixArray ret_e = fix->add(x_e, y_e);
+  FixArray ret_e = fix->add(x_e, y_e); // line 1
   ret_e = fix->sub(ret_e, x.e_bias());
-  BoolArray denormal_m = fix->GE(ret_m, (1ULL << (x.m_bits + 3)) - 2);
+  BoolArray denormal_m = fix->GE(ret_m, (1ULL << (x.m_bits + 3)) - 2); // line 3
 
-  FixArray ret_m_if = fix->round_ties_to_even(ret_m, 3);
-  ret_m_if.s += 1;
-  FixArray ret_m_else = fix->round_ties_to_even(ret_m, 2);
-  ret_m_else = fix->reduce(ret_m_else, x.m_bits + 1);
-  FixArray ret_e_if = fix->add(ret_e, 1);
+  FixArray ret_m_if = fix->round_ties_to_even(ret_m, 3); // line 6
+  ret_m_if.s += 1; // line 6
+  FixArray ret_m_else = fix->round_ties_to_even(ret_m, 2); // line 4
+  ret_m_else = fix->reduce(ret_m_else, x.m_bits + 1); // line 4
+  FixArray ret_e_if = fix->add(ret_e, 1); // line 6
   FixArray ret_e_else = ret_e;
 
-  ret_m = fix->if_else(denormal_m, ret_m_if, ret_m_else);
-  ret_e = fix->if_else(denormal_m, ret_e_if, ret_e_else);
+  ret_m = fix->if_else(denormal_m, ret_m_if, ret_m_else); // line 3-6
+  ret_e = fix->if_else(denormal_m, ret_e_if, ret_e_else); // line 3-6
 
-  BoolArray ret_s = bool_op->XOR(x_s, y_s);
-  BoolArray ret_z = bool_op->OR(x_z, y_z);
+  BoolArray ret_s = bool_op->XOR(x_s, y_s); // line 7
+  BoolArray ret_z = bool_op->OR(x_z, y_z); // line 7
 
   FPArray ret = this->input(this->party, sz, ret_s.data, ret_z.data,
-          ret_m.data, ret_e.data, x.m_bits, x.e_bits);
+          ret_m.data, ret_e.data, x.m_bits, x.e_bits); // line 8
 
   if (check_bounds) {
-    ret = this->check_bounds(ret);
+    ret = this->check_bounds(ret); // line 8
   }
 
   return ret;
@@ -1667,8 +1667,8 @@ FPArray FPOp::general_vector_sum_core(const vector<FPArray> &x, int b_, int sc, 
   int n = x[0].size;
   int b = x[0].m_bits + 1;
   assert(m_bits > 0);
-  int logn = ceil(log2(n));
-  int ell = 2*b - b_ + sc + 2*logn;
+  int logn = ceil(log2(n)); // line 1
+  int ell = 2*b - b_ + sc + 2*logn; // line 1
 
   assert(b_ <= b);
   assert(ell < 64) ;
@@ -1693,7 +1693,7 @@ FPArray FPOp::general_vector_sum_core(const vector<FPArray> &x, int b_, int sc, 
       e_concat[i].data[j] = x_e.data[j*N + i];
     }
   }
-  FixArray e_max_concat = fix->max(e_concat);
+  FixArray e_max_concat = fix->max(e_concat); // e_max
   FixArray e_thr;
   e_thr = fix->sub(e_max_concat, sc + logn + (b - b_));
 

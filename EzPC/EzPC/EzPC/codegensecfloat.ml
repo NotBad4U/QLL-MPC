@@ -735,6 +735,6 @@ let o_one_program ((globals, main):global list * codegen_stmt) (ofname:string) :
 
 let o_program ((globals, mains):codegen_program) (ofname_prefix:string) :unit =
   mains |> List.fold_left (fun i m ->
-               o_one_program (globals, m) (ofname_prefix ^ (string_of_int i) ^ ".cpp");
+               o_one_program (globals, m) (ofname_prefix ^ (string_of_int i) ^ ".cpp"); (* creates ${NETWORK}0.cpp *)
                out_files := [];
                i + 1) 0 |> ignore

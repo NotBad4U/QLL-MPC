@@ -1,5 +1,10 @@
-from torch import nn as nn
+from torch import nn
 
+LOSSES = {
+    "CE":     ("Softmax2",  "computeCELoss",  "getOutDer"),
+    "MSE":    ("Reassign2", "computeMSELoss", "getOutDer"),
+    "QLL":    ("Reassign2", "computeQLLLoss",  "getQLLOutDer"),
+}
 class Layer :
     def __init__(self, in_features, out_features, layer_no) :
         assert 0 < layer_no
@@ -11,7 +16,7 @@ class Layer :
         self.layer_no = layer_no
 
     def __str__(self) :
-        return f"Layer({in_features}, {out_features})"
+        return f"Layer({self.in_features}, {self.out_features})"
         
     def get_dims(self) :
         return (self.in_features, self.out_features)
@@ -60,7 +65,7 @@ class Network :
         return str1
     
 class BeaconTranslator :
-    def __init__(self, net, batch, iters, lr, loss="CE", momentum=False, name="") :
+    def __init__(self, net, batch, iters, lr, loss="CE", momentum=False, name="", qll_p=2.0) :
         self.batch = batch
         self.iters = iters
         self.net = net
@@ -68,10 +73,11 @@ class BeaconTranslator :
         self.loss = loss
         self.momentum = momentum
         self.name = name
-        
+        self.qll_p = float(qll_p)
+
     def __str__(self) :
         str1 = f"Using a batch size of {self.batch} to train for {self.iters} iterations with lr={self.lr}\n"
-        str1 += str(net)
+        str1 += str(self.net)
         return str1
     
     def get_batch_decl(self) :
@@ -115,7 +121,9 @@ Relu2(BATCH, {outf}, layer{ind+1}Out, layer{ind+2}In, layer{ind+1}ReluHot) ;\n\
         l = self.net.layers[-1]
         inf, outf = l.get_dims()
         output_line_args = f"BATCH, {outf}, layer{ind}Temp, fwdOut"
-        output_line = f"Softmax2({output_line_args}) ;\n" if self.loss == "CE" else f"Reassign2({self.batch}, {self.net.no_out}, layer{ind}Temp, fwdOut) ;\n"
+        act, _, _ = LOSSES[self.loss]
+        output_line = f"{act}(BATCH, {outf}, layer{ind}Temp, fwdOut) ;\n"
+        # output_line = f"Softmax2({output_line_args}) ;\n" if self.loss == "CE" else f"Reassign2({self.batch}, {self.net.no_out}, layer{ind}Temp, fwdOut) ;\n"
         body += f"\
 {l.get_wt_type(transpose=True)} layer{ind}WReshaped ;\n\
 float_fl[BATCH][{outf}] layer{ind}Temp ;\n\
@@ -178,10 +186,11 @@ float_fl[{outf}] layer{ind}bDer ;\n\
             arg3 = "fwdOut" if ind == net_len else f"layer{ind}ActDer"
             arg4 = "target" if ind == net_len else f"layer{ind}ReluHot"
             arg5 = f"layer{ind}Der"
-            arg_list = f"{arg1}, {arg2}, {arg3}, {arg4}, {arg5}"
+            p_arg = f"{self.qll_p}, layer{ind}In," if self.loss == "QLL" and ind == net_len else ""
+            arg_list = f"{arg1}, {arg2}, {p_arg}{arg3}, {arg4}, {arg5}"
 
             arg_list = arg_list + (", true" if ind != net_len else '')
-            func_name = "getOutDer" if ind == net_len else "IfElse2"
+            func_name = LOSSES[self.loss][2] if ind == net_len else "IfElse2"
             
             act_call = f"{func_name}({arg_list}) ;\n"
             actDer_call = f"MatMul(BATCH, {outf}, {inf}, layer{ind}Der, layer{ind}W, layer{ind-1}ActDer) ;\n" if ind > 1 else ''
@@ -263,8 +272,8 @@ float_fl[{l.out_features}] layer{ind+1}bMom ;\n\
         return f"forward({arg_list}) ;\n"
     
     def get_loss_call(self) :
-        loss = "CE" if self.loss == "CE" else "MSE"
-        return f"compute{loss}Loss(BATCH, {self.net.no_class}, target, fwdOut, loss) ;\n"
+        p_arg = f"{self.net.in_dim}, {self.qll_p}, inp " if self.loss == "QLL" else ""
+        return f"{LOSSES[self.loss][1]}(BATCH, {self.net.no_class}, {p_arg} target, fwdOut, loss) ;\n"
     
     def get_backward_call(self) :
         net_len = len(self.net)
@@ -334,10 +343,10 @@ def torch_ffnn_to_network_args(torch_net) :
     return input_size, hidden_sizes, output_size
 
 
-def get_translator(torch_net, batch, iters, lr, loss, momentum=False, name="") :
+def get_translator(torch_net, batch, iters, lr, loss, momentum=False, name="", qll_p=2.0) :
     net_args = torch_ffnn_to_network_args(torch_net)
     net = Network(*net_args)
-    return BeaconTranslator(net=net, batch=batch, iters=iters, lr=lr, loss=loss, momentum=momentum, name=name)
+    return BeaconTranslator(net=net, batch=batch, iters=iters, lr=lr, loss=loss, momentum=momentum, name=name, qll_p=qll_p)
 
 
 def dump_ezpc(trans) :

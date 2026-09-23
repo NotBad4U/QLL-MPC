@@ -1,6 +1,7 @@
 import torch
 import argparse
 import os
+import sys 
 
 nn = torch.nn
 F = nn.functional
@@ -121,6 +122,14 @@ class MNISTFFNN(nn.Module):
         x = F.relu(self.fc2(x))
         return self.fc3(x)
 
+class ToyNetwork(nn.Module):
+    def __init__(self):
+        super(ToyNetwork, self).__init__()
+        self.fc1 = nn.Linear(2,1)
+
+    def forward(self, x):
+        return self.fc1(x)
+
 
 ## Dumping weights and input
 
@@ -184,14 +193,31 @@ def get_pytorch_stuff_ffnn(ez, log=False):
             f.close()
 
         net_out = torch.stack([torch.argmax(row) for row in randperm])
-    else:
+    elif ez.loss in ("MSE", "QLL"):
         target_vals = 10 * torch.rand(ez.batch, 1).to(dtype)
-        with open(f"{ez.name}_target{ez.batch}.inp", "w") as f:
+        with open(f"{ez.name}_labels{ez.batch}.inp", "w") as f:
             for el in target_vals.flatten():
                 f.write(str(el.item()) + "\n")
             f.close()
 
         net_out = target_vals
+    # ffnn qll loss
+    # elif ez.loss == "QLL":
+    #     # update for qll
+    #     randperm = torch.cat(
+    #         [torch.randperm(ez.net.no_class) for _ in range(ez.batch)]
+    #     ).reshape(ez.batch, ez.net.no_class)
+
+    #     lab_out = torch.cat(
+    #         [(row == ez.net.no_class - 1).to(torch.int64) for row in randperm]
+    #     ).reshape(ez.batch, ez.net.no_class)
+
+    #     with open(f"{ez.name}_labels{ez.batch}.inp", "w") as f:
+    #         for el in lab_out.flatten():
+    #             f.write(str(el.item()) + "\n")
+    #         f.close()
+
+    #     net_out = torch.stack([torch.argmax(row) for row in randperm])
 
     return net, net_inp, net_out
 
@@ -230,7 +256,8 @@ def get_pytorch_stuff_conv(ez, log=False):
             f.close()
 
         net_out = torch.stack([torch.argmax(row) for row in randperm])
-    else:
+
+    elif ez.loss in ("MSE", "QLL"):
         target_vals = 10 * torch.rand(ez.batch, 1).to(dtype)
         with open(f"{ez.name}_target{ez.batch}.inp", "w") as f:
             for el in target_vals.flatten():
@@ -238,11 +265,27 @@ def get_pytorch_stuff_conv(ez, log=False):
             f.close()
 
         net_out = target_vals
+    # update for qll
+    # elif ez.loss == "QLL":
+    #     randperm = torch.cat(
+    #         [torch.randperm(ez.net.no_class) for _ in range(ez.batch)]
+    #     ).reshape(ez.batch, ez.net.no_class)
+
+    #     lab_out = torch.cat(
+    #         [(row == ez.net.no_class - 1).to(torch.int64) for row in randperm]
+    #     ).reshape(ez.batch, ez.net.no_class)
+
+    #     with open(f"{ez.name}_labels{ez.batch}.inp", "w") as f:
+    #         for el in lab_out.flatten():
+    #             f.write(str(el.item()) + "\n")
+    #         f.close()
+
+    #     net_out = torch.stack([torch.argmax(row) for row in randperm])
 
     return net, net_inp, net_out
 
 
-def do_the_cmake(name):
+def do_the_cmake_dep(name):
     bo, bc = "{", "}"
     dollah = "$"
     text = f'\
@@ -270,6 +313,28 @@ add_network_beacon({name})\n\
         file.write(text)
         file.close()
 
+def do_the_cmake(name):
+    text = f"""cmake_minimum_required (VERSION 3.0)
+project (MY_PROJ)
+find_package(SCI REQUIRED PATHS "${{CMAKE_SOURCE_DIR}}/../SCI/build/install")
+
+macro(add_network_secfloat name)
+    add_executable(${{name}}_secfloat "${{name}}.cpp")
+    target_link_libraries(${{name}}_secfloat SCI::SCI-SecfloatML)
+    target_compile_options(${{name}}_secfloat PRIVATE "-w")
+endmacro()
+
+macro(add_network_beacon name)
+    add_executable(${{name}}_beacon "${{name}}.cpp")
+    target_link_libraries(${{name}}_beacon SCI::SCI-Beacon)
+    target_compile_options(${{name}}_beacon PRIVATE "-w")
+endmacro()
+
+add_network_secfloat({name})
+add_network_beacon({name})
+"""
+    with open("CMakeLists.txt", "w") as f:
+        f.write(text)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -284,11 +349,12 @@ if __name__ == "__main__":
     parser.add_argument("lr")
     parser.add_argument("loss")
     parser.add_argument("momentum")
+    parser.add_argument("qll_p", nargs="?", default="2.0")
     args = parser.parse_args()
     print(args.network)
 
-    if args.network in ["Relevance", "Logistic", "FFNN"]:
-        net = {"Relevance": Relevance, "Logistic": MNISTLogistic, "FFNN": MNISTFFNN}[
+    if args.network in ["Relevance", "Logistic", "FFNN", "ToyNetwork"]:
+        net = {"Relevance": Relevance, "Logistic": MNISTLogistic, "FFNN": MNISTFFNN, "ToyNetwork": ToyNetwork}[
             args.network
         ]()
         trans = bcf.get_translator(
@@ -299,6 +365,7 @@ if __name__ == "__main__":
             loss=args.loss,
             momentum=(args.momentum == "yes"),
             name=args.network,
+            qll_p=float(args.qll_p) # read qll p - hardness
         )
         bcf.dump_ezpc(trans)
 
@@ -327,9 +394,14 @@ if __name__ == "__main__":
 
     os.system(f"../EzPC/EzPC/ezpc --codegen SECFLOAT --bitlen 32 {args.network}.ezpc")
     os.system(f"mv {args.network}0.cpp {args.network}.cpp")
+
+    # remove extern int BATCH delaration and Transpose in library_float.h
+    os.system(f"sed -i 's/^const int32_t BATCH/int32_t BATCH/' {args.network}.cpp")
+    os.system(rf"sed -i 's/^void Transpose(int32_t s1, int32_t s2, auto& inArr, auto& outArr)/void Transpose(int32_t s1, int32_t s2, vector<vector<FPArray>>\& inArr, vector<vector<FPArray>>\& outArr)/' {args.network}.cpp")
+
     os.system("mkdir -p build")
     os.system("cd build && cmake .. && make -j")
     os.system("cp build/*_secfloat build/*_beacon .")
     os.system("rm -Rf build/")
-    os.system(f"rm {args.network}.ezpc {args.network}.cpp")
+    # os.system(f"rm {args.network}.ezpc {args.network}.cpp")
     # os.system("cd ..")

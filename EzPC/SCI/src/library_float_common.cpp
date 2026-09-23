@@ -19,6 +19,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#include "FloatingPoint/floating-point.h"
 #include "globals_float.h"
 #include "library_float.h"
 
@@ -545,6 +546,159 @@ void getOutDer(int32_t s1, int32_t s2, vector<vector<FPArray>>& P, vector<vector
 	for (int i = 0, k = 0 ; i < s1 ; i++) 
 		for (int j = 0 ; j < s2 ; j++, k++)
 			der[i][j] = flat3[k] ;
+}
+
+// QLL Derivative
+/*
+Hard-code derivative of loss function below:
+	L = (y - x_1) /\ (y - x_2)
+	y = x_1 * w_1 + x_2 * w_2 for ToyNetwork
+	a /\ b = (a^p + b^p)^(1/p)
+
+	L = ((x_1w_1 + x_2w_2 - x_1)^p + (x_1w_1 + x_2w_2 - x_2)^p)^(1/p)
+	dL/dw_1 = x_1((x_1w_1 + x_2w_2 - x_1)^p-1 + (x_1w_1 + x_2w_2 - x_2)^p-1)) * ((x_1w_1 + x_2w_2 - x_1)^p + (x_1w_1 + x_2w_2 - x_2)^p))^((1/p) - 1)
+	dL/dy = ((y - x_1)^p + (y - x_2)^p)^((1-p)/p) * ((y-x_1)^p-1 + (y-x_2)^p-1)
+
+	// Sub(s1, out_flat, x_1, t1);
+	// Exp(s1, t1, p, t2);
+
+	// Sub(s1, out_flat, x_2, t3);
+	// Exp(s1, t3, p, t4);
+
+	// Add(s1, t2, t4, t5);
+	// Exp(s1, t5, ((1-p/p)), t6);
+
+	// Mul(s1, t6, x_1, t7);
+
+	// second branch
+
+	// Sub(s1, out_flat, x_1, t8);
+	// Exp(s1, t8, (p-1), t9);
+
+	// Sub(s1, out_flat, x_2, t10);
+	// Exp(s1, t10, (p-1), t11);
+
+	// Add(s1, t9, t11, t12);
+
+	// last operation
+	// Mul(s1, t7, t12, t13);
+
+	// getLoss(s1, t_13, loss);
+*/
+// ToyNetwork calls with getQLLOutDer(BATCH, 1, 1.0, fwdOut, target, layer1Der) ;
+void getQLLOutDer(int32_t s1, int32_t s2, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>>& Y, vector<vector<FPArray>>& Yhat, vector<vector<FPArray>>& der) {
+	int sz = s1*s2 ;
+	int m_bits, e_bits ;
+	m_bits = Y[0][0].m_bits ;
+	e_bits = Y[0][0].e_bits ;
+	vector<FPArray> Y_flat = make_vector_float(ALICE, s1); // predictions
+	vector<FPArray> x_1 = make_vector_float(ALICE, s1);
+	vector<FPArray> x_2 = make_vector_float(ALICE, s1);
+	// assumes s3 = 2 for ToyNetwork
+	for (int i = 0; i < s1; i++)
+	{
+		// Yhat_flat[i] = Yhat[i][0];
+		Y_flat[i] = Y[i][0];
+		x_1[i] = inp[i][0];
+		x_2[i] = inp[i][1];
+	}
+	
+	vector<FPArray> t1 = make_vector_float(ALICE, s1);
+	vector<FPArray> t2 = make_vector_float(ALICE, s1);
+	vector<FPArray> t3 = make_vector_float(ALICE, s1);
+	vector<FPArray> t4 = make_vector_float(ALICE, s1);
+	vector<FPArray> t5 = make_vector_float(ALICE, s1);
+	vector<FPArray> t6 = make_vector_float(ALICE, s1);
+	vector<FPArray> t7 = make_vector_float(ALICE, s1);
+	vector<FPArray> t8= make_vector_float(ALICE, s1);
+	vector<FPArray> t9= make_vector_float(ALICE, s1);
+	vector<FPArray> t10= make_vector_float(ALICE, s1);
+
+	// (y - x_1)^p
+	ElemWiseSub(s1, Y_flat, x_1, t1);
+	Pow(s1, t1, p, t2);
+	// (y - x_2)^p
+	ElemWiseSub(s1, Y_flat, x_2 , t3);
+	Pow(s1, t3, p, t4);
+	// (a + b)^((1-p)/p)
+	ElemWiseAdd(s1, t2, t4, t5);
+	Sqrt(s1, t5, t6); // fix this
+
+	// (y-x_1)^p-1
+	// Pow(s1, t1, (p-1), t7);
+	// (y - x_2)^p-1
+	// Pow(s1, t3, (p-1), t8);
+	// a + b
+	ElemWiseAdd(s1, t1, t3, t9);
+	//
+	ElemWiseDiv(s1, t9, t6, t10);
+
+	vector<FPArray> divver = make_vector_float(ALICE, sz) ;
+	for (int i = 0 ; i < sz ; i++)
+		divver[i] = __fp_op->input<float>(ALICE, 1, (float)(1.0/(s1*s2)), m_bits, e_bits) ;
+	ElemWiseMul(sz, t10, divver, t10) ;
+
+	for (int i = 0, k = 0 ; i < s1 ; i++) 
+		for (int j = 0 ; j < s2 ; j++, k++)
+			der[i][j] = t10[k] ;
+}
+
+// Compute QLLLoss
+/*
+Hard-code this property into the loss (before auto-diff, etc.): 
+	L = (y - x_1) /\ (y - x_2)
+	y = x_1 * w_1 + x_2 * w_2 for ToyNetwork
+	called with computeQLLLoss(BATCH, 1, 1.0, target, fwdOut, loss) ;
+*/
+void computeQLLLoss(int32_t s1, int32_t s2, int32_t s3, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>> &target, vector<vector<FPArray>> &fwdOut, vector<FPArray> &loss){
+	// vector<FPArray> target_flat = make_vector_float(ALICE, s1); // true labels
+	vector<FPArray> out_flat = make_vector_float(ALICE, s1); // predictions
+	vector<FPArray> x_1 = make_vector_float(ALICE, s1);
+	vector<FPArray> x_2 = make_vector_float(ALICE, s1);
+	// assumes s3 = 2 for ToyNetwork
+	for (int i = 0; i < s1; i++)
+	{
+		// target_flat[i] = target[i][0];
+		out_flat[i] = fwdOut[i][0];
+		x_1[i] = inp[i][0];
+		x_2[i] = inp[i][1];
+	}
+	
+	vector<FPArray> t1 = make_vector_float(ALICE, s1);
+	vector<FPArray> t2 = make_vector_float(ALICE, s1);
+	vector<FPArray> t3 = make_vector_float(ALICE, s1);
+	vector<FPArray> t4 = make_vector_float(ALICE, s1);
+	vector<FPArray> t5 = make_vector_float(ALICE, s1);
+	vector<FPArray> t6 = make_vector_float(ALICE, s1);
+
+	// (y - x_1)^p
+	ElemWiseSub(s1, out_flat, x_1, t1);
+	Pow(s1, t1, p, t2);
+	// (y - x_2)^p
+	ElemWiseSub(s1, out_flat, x_2 , t3);
+	Pow(s1, t3, p, t4);
+	// (a + b)^(1/p)
+	ElemWiseAdd(s1, t2, t4, t5);
+	Sqrt(s1, t5, t6);
+
+	getLoss(s1, t6, loss);
+}
+
+void Pow(int32_t s1, vector<FPArray> &arr, float p, vector<FPArray> &outArr){
+	// a^p
+	ElemWiseMul(s1, arr, arr, outArr); // x * x = x^2
+
+	// (isInt, isOdd) = F_intOarity(b)
+	// s = a.s & isOdd
+	// if 1{b.z = 1} then return Float_p,q(1)
+	// else if 1{a.z = 1} then
+		// if 1{b.s = 0} then return (1, s, 1 - 2^p-1, 0) else return (0, s, 2^p-1, 2^q)
+	// else
+		// a' = (0, 0, a.e, a.m)
+		// delta = b [.] Log_2(a')
+		// gamma = F_FP_exp(delta)
+		// return (gamma.z, s,  gamma.e, gamma.m)
+	
 }
 
 void MatMul3(

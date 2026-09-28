@@ -22,6 +22,7 @@ SOFTWARE.
 #include "FloatingPoint/floating-point.h"
 #include "globals_float.h"
 #include "library_float.h"
+#include <cmath>
 #include <cstdint>
 
 using namespace std ;
@@ -2923,15 +2924,14 @@ Hard-code derivative of loss function below:
 	dL/dy = ((y - x_1)^p + (y - x_2)^p)^((1-p)/p) * ((y-x_1)^p-1 + (y-x_2)^p-1)
 
 */
-// ToyNetwork calls with getQLLOutDer(BATCH, 1, 1.0, fwdOut, target, layer1Der) ;
-void getQLLOutDer(int32_t s1, int32_t s2, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>>& Y, vector<vector<FPArray>>& Yhat, vector<vector<FPArray>>& der) {
-	int sz = s1*s2 ;
+void getQLLOutDer(int32_t s1, int32_t k, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>>& Y, vector<vector<FPArray>>& Yhat, vector<vector<FPArray>>& der) {
 	int m_bits, e_bits ;
 	m_bits = Y[0][0].m_bits ;
 	e_bits = Y[0][0].e_bits ;
 	vector<FPArray> Y_flat = make_vector_float(ALICE, s1); // predictions
 	vector<FPArray> x_1 = make_vector_float(ALICE, s1);
 	vector<FPArray> x_2 = make_vector_float(ALICE, s1);
+	
 	// assumes s3 = 2 for ToyNetwork
 	for (int i = 0; i < s1; i++)
 	{
@@ -2941,44 +2941,37 @@ void getQLLOutDer(int32_t s1, int32_t s2, float p, vector<vector<FPArray>> &inp,
 		x_2[i] = inp[i][1];
 	}
 	
-	vector<FPArray> t1 = make_vector_float(ALICE, s1);
-	vector<FPArray> t2 = make_vector_float(ALICE, s1);
-	vector<FPArray> t3 = make_vector_float(ALICE, s1);
-	vector<FPArray> t4 = make_vector_float(ALICE, s1);
-	vector<FPArray> t5 = make_vector_float(ALICE, s1);
-	vector<FPArray> t6 = make_vector_float(ALICE, s1);
-	vector<FPArray> t7 = make_vector_float(ALICE, s1);
-	vector<FPArray> t8= make_vector_float(ALICE, s1);
-	vector<FPArray> t9= make_vector_float(ALICE, s1);
-	vector<FPArray> t10= make_vector_float(ALICE, s1);
+	// (y - x_1),  (y - x_2)
+	vector<FPArray> a = make_vector_float(ALICE, s1);
+	vector<FPArray> b = make_vector_float(ALICE, s1);
+	ElemWiseSub(s1, Y_flat, x_1, a);
+	ElemWiseSub(s1, Y_flat, x_2 , b);
+	
+	// (y - x_1) /\ (y - x_2)
+	vector<vector<FPArray>> d1 = make_vector_float(ALICE, k, s1);
+	vector<vector<FPArray>> d2 = make_vector_float(ALICE, k, s1);
+	
+	for(int i = 0; i < s1; i++){
+		d1[0][i] = __fp_op->input<float>(ALICE, 1, 1.0f, m_bits, e_bits);
+		d2[0][i] = __fp_op->input<float>(ALICE, 1, 1.0f, m_bits, e_bits);
 
-	// (y - x_1)^p
-	ElemWiseSub(s1, Y_flat, x_1, t1);
-	Pow(s1, t1, p, t2);
-	// (y - x_2)^p
-	ElemWiseSub(s1, Y_flat, x_2 , t3);
-	Pow(s1, t3, p, t4);
-	// (a + b)^((1-p)/p)
-	ElemWiseAdd(s1, t2, t4, t5);
-	Sqrt(s1, t5, t6); // fix this
+		d1[0][i].s[0] = a[i].s[0];
+		d2[0][i].s[0] = b[i].s[0];
+		a[i].s[0] = 0;
+		b[i].s[0] = 0;
+	}
 
-	// (y-x_1)^p-1
-	// Pow(s1, t1, (p-1), t7);
-	// (y - x_2)^p-1
-	// Pow(s1, t3, (p-1), t8);
-	// a + b
-	ElemWiseAdd(s1, t1, t3, t9);
-	//
-	ElemWiseDiv(s1, t9, t6, t10);
+	vector<FPArray> L = make_vector_float(ALICE, s1);
+	vector<vector<FPArray>> dL = make_vector_float(ALICE, k, s1);
+	// dL
+	PsumQLLDer(s1, k, a, d1, b, d2, p, L, dL);
 
-	vector<FPArray> divver = make_vector_float(ALICE, sz) ;
-	for (int i = 0 ; i < sz ; i++)
-		divver[i] = __fp_op->input<float>(ALICE, 1, (float)(1.0/(s1*s2)), m_bits, e_bits) ;
-	ElemWiseMul(sz, t10, divver, t10) ;
-
-	for (int i = 0, k = 0 ; i < s1 ; i++) 
-		for (int j = 0 ; j < s2 ; j++, k++)
-			der[i][j] = t10[k] ;
+	for(int j = 0; j < k; j++){
+		scalarMultiplication(s1, 1.0f/s1, dL[j], dL[j]);
+		for (int i = 0; i < s1 ; i++){
+			der[i][j] = dL[j][i];
+		}
+	}
 }
 
 // Compute QLLLoss
@@ -2986,7 +2979,6 @@ void getQLLOutDer(int32_t s1, int32_t s2, float p, vector<vector<FPArray>> &inp,
 Hard-code this property into the loss (before auto-diff, etc.): 
 	L = (y - x_1) /\ (y - x_2)
 	y = x_1 * w_1 + x_2 * w_2 for ToyNetwork
-	called with computeQLLLoss(BATCH, 1, 1.0, target, fwdOut, loss) ;
 */
 void computeQLLLoss(int32_t s1, int32_t s2, int32_t s3, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>> &target, vector<vector<FPArray>> &fwdOut, vector<FPArray> &loss){
 	// vector<FPArray> target_flat = make_vector_float(ALICE, s1); // true labels
@@ -3006,14 +2998,22 @@ void computeQLLLoss(int32_t s1, int32_t s2, int32_t s3, float p, vector<vector<F
 	vector<FPArray> b = make_vector_float(ALICE, s1);
 	vector<FPArray> c = make_vector_float(ALICE, s1);
 
-	// (y - x_1)^p
+	// a = (y - x_1), b = (y - x_1)
 	ElemWiseSub(s1, out_flat, x_1, a);
 	ElemWiseSub(s1, out_flat, x_2 , b);
-
+	// a \/ b
 	PsumQLL(s1, a, b, p, c);
 
-	getLoss(s1, c, loss);
+	// mean over batch, getLoss(s1, c, loss);
+	vector<vector<FPArray>> terms = make_vector_float(ALICE, s1, 1);
+	for (int i=0; i< s1; i++){
+		terms[i][0] = c[i];
+	}
+	vector<FPArray> sum = make_vector_float(ALICE, 1);
+	vectorSum2(1, s1, terms, sum);
+	scalarMultiplication(1, 1.0f/s1, sum, loss);
 }
+
 // a^p = exp(p*ln(a))
 void Pow_thread(
 	int tid, int sz, int m_bits, int e_bits,
@@ -3475,6 +3475,134 @@ void PsumQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPAr
 	ElemWiseMul(s1, ap_minus, t, wa); // (a^p/a)(out/S)
 	ElemWiseMul(s1, bp_minus, t, wb); // (b^p/b)(out/S)
 	
+	// chain rule
+	vector<FPArray> da = make_vector_float(ALICE, s1);
+	vector<FPArray> db = make_vector_float(ALICE, s1);
+	for (int j = 0; j < k; j++){
+		ElemWiseMul(s1, wa, d1[j], da);
+		ElemWiseMul(s1, wb, d2[j], db);
+		ElemWiseAdd(s1, db, da, dOut[j]);
+	}
+
+	outArr = out;
+}
+
+void HPsumQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPArray>>& d1, vector<FPArray>& arr2, vector<vector<FPArray>>& d2, float p, vector<FPArray>& outArr, vector<vector<FPArray>>& dOut){
+	// forward hpsum
+	vector<FPArray> ap = make_vector_float(ALICE, s1);
+	vector<FPArray> bp = make_vector_float(ALICE, s1);
+	vector<FPArray> ap_minus = make_vector_float(ALICE, s1);
+	vector<FPArray> bp_minus = make_vector_float(ALICE, s1);
+	vector<FPArray> S = make_vector_float(ALICE, s1);
+	vector<FPArray> t = make_vector_float(ALICE, s1);
+	vector<FPArray> out = make_vector_float(ALICE, s1);
+	
+	Pow(s1, arr1, -p-1, ap_minus);
+	Pow(s1, arr2, -p-1, bp_minus);
+	ElemWiseMul(s1, arr1, ap_minus, ap);
+	ElemWiseMul(s1, arr2, bp_minus, bp);
+
+	ElemWiseAdd(s1, ap, bp, S);
+	Pow(s1, S, -1.0f/p - 1.0f, t);
+	ElemWiseMul(s1, t, S, out);
+
+	// local partials
+	vector<FPArray> wa = make_vector_float(ALICE, s1);
+	vector<FPArray> wb = make_vector_float(ALICE, s1);
+
+	ElemWiseMul(s1, ap_minus, t, wa); // (a^-p/a)(out/S)
+	ElemWiseMul(s1, bp_minus, t, wb); // (b^-p/b)(out/S)
+	
+	// chain rule
+	vector<FPArray> da = make_vector_float(ALICE, s1);
+	vector<FPArray> db = make_vector_float(ALICE, s1);
+	for (int j = 0; j < k; j++){
+		ElemWiseMul(s1, wa, d1[j], da);
+		ElemWiseMul(s1, wb, d2[j], db);
+		ElemWiseAdd(s1, db, da, dOut[j]);
+	}
+
+	outArr = out;
+}
+
+// smoothmin
+void SmoothMinQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPArray>>& d1, vector<FPArray>& arr2, vector<vector<FPArray>>& d2, float p, vector<FPArray>& outArr, vector<vector<FPArray>>& dOut){
+	// forward
+	vector<FPArray> ap = make_vector_float(ALICE, s1);
+	vector<FPArray> bp = make_vector_float(ALICE, s1);
+	vector<FPArray> e_ap = make_vector_float(ALICE, s1);
+	vector<FPArray> e_bp = make_vector_float(ALICE, s1);
+	vector<FPArray> S = make_vector_float(ALICE, s1);
+	vector<FPArray> out = make_vector_float(ALICE, s1);
+	
+	scalarMultiplication(s1, p, arr1, ap);
+	scalarMultiplication(s1, p, arr2, bp);
+
+	ToMulQLL(s1, ap, e_ap);
+	ToMulQLL(s1, bp, e_bp);
+
+	ElemWiseAdd(s1, e_ap, e_bp, S);
+	ToAddQLL(s1, S, out);
+	scalarMultiplication(s1, 1.0f/p, out, out);
+	
+	// local partials
+	vector<FPArray> wa = make_vector_float(ALICE, s1);
+	vector<FPArray> wb = make_vector_float(ALICE, s1);
+	vector<FPArray> tmp = make_vector_float(ALICE, s1);
+	
+	ElemWiseSub(s1, arr1, out, tmp);
+	scalarMultiplication(s1, p, tmp, tmp);
+	ToMulQLL(s1, tmp, wa);
+
+	ElemWiseSub(s1, arr2, out, tmp);
+	scalarMultiplication(s1, p, tmp, tmp);
+	ToMulQLL(s1, tmp, wb);
+
+	// chain rule
+	vector<FPArray> da = make_vector_float(ALICE, s1);
+	vector<FPArray> db = make_vector_float(ALICE, s1);
+	for (int j = 0; j < k; j++){
+		ElemWiseMul(s1, wa, d1[j], da);
+		ElemWiseMul(s1, wb, d2[j], db);
+		ElemWiseAdd(s1, db, da, dOut[j]);
+	}
+
+	outArr = out;
+}
+
+// smoothmax
+void SmoothMaxQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPArray>>& d1, vector<FPArray>& arr2, vector<vector<FPArray>>& d2, float p, vector<FPArray>& outArr, vector<vector<FPArray>>& dOut){
+	// forward
+	vector<FPArray> ap = make_vector_float(ALICE, s1);
+	vector<FPArray> bp = make_vector_float(ALICE, s1);
+	vector<FPArray> e_ap = make_vector_float(ALICE, s1);
+	vector<FPArray> e_bp = make_vector_float(ALICE, s1);
+	vector<FPArray> S = make_vector_float(ALICE, s1);
+	vector<FPArray> out = make_vector_float(ALICE, s1);
+	
+	scalarMultiplication(s1, -p, arr1, ap);
+	scalarMultiplication(s1, -p, arr2, bp);
+
+	ToMulQLL(s1, ap, e_ap);
+	ToMulQLL(s1, bp, e_bp);
+
+	ElemWiseAdd(s1, e_ap, e_bp, S);
+	ToAddQLL(s1, S, out);
+	scalarMultiplication(s1, -1.0f/p, out, out);
+	
+	// local partials
+	vector<FPArray> wa = make_vector_float(ALICE, s1);
+	vector<FPArray> wb = make_vector_float(ALICE, s1);
+	vector<FPArray> tmp = make_vector_float(ALICE, s1);
+	
+	ElemWiseSub(s1, arr1, out, tmp);
+	scalarMultiplication(s1, -p, tmp, tmp);
+	ToMulQLL(s1, tmp, wa);
+
+	ElemWiseSub(s1, arr2, out, tmp);
+	scalarMultiplication(s1, -p, tmp, tmp);
+	ToMulQLL(s1, tmp, wb);
+
 	// chain rule
 	vector<FPArray> da = make_vector_float(ALICE, s1);
 	vector<FPArray> db = make_vector_float(ALICE, s1);

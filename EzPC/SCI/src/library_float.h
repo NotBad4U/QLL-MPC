@@ -207,12 +207,16 @@ void PsumQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPAr
 
 // /\ multiplicative harmonic p-sum: (a^(-p) + b^(-p))^(-1/p) = toMul(SmoothMax(toAdd a, toAdd b))
 void HPsumQLL(int32_t s1, vector<FPArray>& arr1, vector<FPArray>& arr2, float p, vector<FPArray>& outArr);
+void HPsumQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPArray>>& d1, vector<FPArray>& arr2, vector<vector<FPArray>>& d2, float p, vector<FPArray>& outArr, vector<vector<FPArray>>& dOut);
 
 // \/ additive Psum: toAdd(Psum(toMul a, toMul b)) = -ln(e^(-pa) + e^(-pb)) / p
 void SmoothMinQLL(int32_t s1, vector<FPArray>& arr1, vector<FPArray>& arr2, float p, vector<FPArray>& outArr);
+void SmoothMinQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPArray>>& d1, vector<FPArray>& arr2, vector<vector<FPArray>>& d2, float p, vector<FPArray>& outArr, vector<vector<FPArray>>& dOut);
 
 // /\ additive HPsum: toAdd(HPsum(toMul a, toMul b)) = ln(e^(pa) + e^(pb)) / p
 void SmoothMaxQLL(int32_t s1, vector<FPArray>& arr1, vector<FPArray>& arr2, float p, vector<FPArray>& outArr);
+void SmoothMaxQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPArray>>& d1, vector<FPArray>& arr2, vector<vector<FPArray>>& d2, float p, vector<FPArray>& outArr, vector<vector<FPArray>>& dOut);
+
 
 void MatMul(int32_t m, int32_t n, int32_t p,
 			vector<vector<FPArray>> &A,

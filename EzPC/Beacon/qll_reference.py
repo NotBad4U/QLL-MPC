@@ -54,7 +54,7 @@ def main(argv=None):
     ap.add_argument("lr", type=float)
     ap.add_argument("qll_p", type=float, nargs="?", default=2.0)
     ap.add_argument("--domain", choices=DOMAINS, default="mul")
-    ap.add_argument("--dtype", choices=["float64", "float32"], default="float64")
+    ap.add_argument("--dtype", choices=["float64", "float32"], default="float32")
     args = ap.parse_args(argv)
 
     q = DOMAINS[args.domain](args.qll_p)
@@ -68,7 +68,7 @@ def main(argv=None):
     for i in range(args.iters):
         y = net(X)
         a, b = atoms(X, y)
-        loss = q.disj(to_mul(a),(b)).mean()
+        loss = q.disj(a.abs(),b.abs()).mean()
         print(f"   iteration {i+1}: {loss.item():.15g}")
 
         net.zero_grad()

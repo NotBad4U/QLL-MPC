@@ -2228,3 +2228,16 @@ FPArray FPOp::FP32_to_bfloat16(const FPArray &x) {
           x_m.data, x_e.data, BFLOAT16_M_BITS, BFLOAT16_E_BITS);
   return ret;
 }
+
+// QLL Connectives 
+
+// Multiplicative dual: 1/a
+FPArray FPOp::dual_qll(const FPArray &x) {
+  FPArray one = this->input<float>(ALICE, x.size, 1.0f, x.m_bits, x.e_bits);
+  return this->div(one, x);
+}
+
+// Additive dual: -a
+FPArray FPOp::adual_qll(const FPArray &x) {
+  return flip_sign(x);
+}

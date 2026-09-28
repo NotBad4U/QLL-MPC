@@ -499,6 +499,9 @@ public:
   FPArray bfloat16_to_FP32(const FPArray &x);
   
   FPArray FP32_to_bfloat16(const FPArray &x);
+
+  FPArray dual_qll(const FPArray &x);
+  FPArray adual_qll(const FPArray &x);
 };
 
 #endif // FLOATING_POINT_H__

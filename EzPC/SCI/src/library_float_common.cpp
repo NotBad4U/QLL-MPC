@@ -22,6 +22,7 @@ SOFTWARE.
 #include "FloatingPoint/floating-point.h"
 #include "globals_float.h"
 #include "library_float.h"
+#include <cstdint>
 
 using namespace std ;
 using namespace sci ;
@@ -546,159 +547,6 @@ void getOutDer(int32_t s1, int32_t s2, vector<vector<FPArray>>& P, vector<vector
 	for (int i = 0, k = 0 ; i < s1 ; i++) 
 		for (int j = 0 ; j < s2 ; j++, k++)
 			der[i][j] = flat3[k] ;
-}
-
-// QLL Derivative
-/*
-Hard-code derivative of loss function below:
-	L = (y - x_1) /\ (y - x_2)
-	y = x_1 * w_1 + x_2 * w_2 for ToyNetwork
-	a /\ b = (a^p + b^p)^(1/p)
-
-	L = ((x_1w_1 + x_2w_2 - x_1)^p + (x_1w_1 + x_2w_2 - x_2)^p)^(1/p)
-	dL/dw_1 = x_1((x_1w_1 + x_2w_2 - x_1)^p-1 + (x_1w_1 + x_2w_2 - x_2)^p-1)) * ((x_1w_1 + x_2w_2 - x_1)^p + (x_1w_1 + x_2w_2 - x_2)^p))^((1/p) - 1)
-	dL/dy = ((y - x_1)^p + (y - x_2)^p)^((1-p)/p) * ((y-x_1)^p-1 + (y-x_2)^p-1)
-
-	// Sub(s1, out_flat, x_1, t1);
-	// Exp(s1, t1, p, t2);
-
-	// Sub(s1, out_flat, x_2, t3);
-	// Exp(s1, t3, p, t4);
-
-	// Add(s1, t2, t4, t5);
-	// Exp(s1, t5, ((1-p/p)), t6);
-
-	// Mul(s1, t6, x_1, t7);
-
-	// second branch
-
-	// Sub(s1, out_flat, x_1, t8);
-	// Exp(s1, t8, (p-1), t9);
-
-	// Sub(s1, out_flat, x_2, t10);
-	// Exp(s1, t10, (p-1), t11);
-
-	// Add(s1, t9, t11, t12);
-
-	// last operation
-	// Mul(s1, t7, t12, t13);
-
-	// getLoss(s1, t_13, loss);
-*/
-// ToyNetwork calls with getQLLOutDer(BATCH, 1, 1.0, fwdOut, target, layer1Der) ;
-void getQLLOutDer(int32_t s1, int32_t s2, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>>& Y, vector<vector<FPArray>>& Yhat, vector<vector<FPArray>>& der) {
-	int sz = s1*s2 ;
-	int m_bits, e_bits ;
-	m_bits = Y[0][0].m_bits ;
-	e_bits = Y[0][0].e_bits ;
-	vector<FPArray> Y_flat = make_vector_float(ALICE, s1); // predictions
-	vector<FPArray> x_1 = make_vector_float(ALICE, s1);
-	vector<FPArray> x_2 = make_vector_float(ALICE, s1);
-	// assumes s3 = 2 for ToyNetwork
-	for (int i = 0; i < s1; i++)
-	{
-		// Yhat_flat[i] = Yhat[i][0];
-		Y_flat[i] = Y[i][0];
-		x_1[i] = inp[i][0];
-		x_2[i] = inp[i][1];
-	}
-	
-	vector<FPArray> t1 = make_vector_float(ALICE, s1);
-	vector<FPArray> t2 = make_vector_float(ALICE, s1);
-	vector<FPArray> t3 = make_vector_float(ALICE, s1);
-	vector<FPArray> t4 = make_vector_float(ALICE, s1);
-	vector<FPArray> t5 = make_vector_float(ALICE, s1);
-	vector<FPArray> t6 = make_vector_float(ALICE, s1);
-	vector<FPArray> t7 = make_vector_float(ALICE, s1);
-	vector<FPArray> t8= make_vector_float(ALICE, s1);
-	vector<FPArray> t9= make_vector_float(ALICE, s1);
-	vector<FPArray> t10= make_vector_float(ALICE, s1);
-
-	// (y - x_1)^p
-	ElemWiseSub(s1, Y_flat, x_1, t1);
-	Pow(s1, t1, p, t2);
-	// (y - x_2)^p
-	ElemWiseSub(s1, Y_flat, x_2 , t3);
-	Pow(s1, t3, p, t4);
-	// (a + b)^((1-p)/p)
-	ElemWiseAdd(s1, t2, t4, t5);
-	Sqrt(s1, t5, t6); // fix this
-
-	// (y-x_1)^p-1
-	// Pow(s1, t1, (p-1), t7);
-	// (y - x_2)^p-1
-	// Pow(s1, t3, (p-1), t8);
-	// a + b
-	ElemWiseAdd(s1, t1, t3, t9);
-	//
-	ElemWiseDiv(s1, t9, t6, t10);
-
-	vector<FPArray> divver = make_vector_float(ALICE, sz) ;
-	for (int i = 0 ; i < sz ; i++)
-		divver[i] = __fp_op->input<float>(ALICE, 1, (float)(1.0/(s1*s2)), m_bits, e_bits) ;
-	ElemWiseMul(sz, t10, divver, t10) ;
-
-	for (int i = 0, k = 0 ; i < s1 ; i++) 
-		for (int j = 0 ; j < s2 ; j++, k++)
-			der[i][j] = t10[k] ;
-}
-
-// Compute QLLLoss
-/*
-Hard-code this property into the loss (before auto-diff, etc.): 
-	L = (y - x_1) /\ (y - x_2)
-	y = x_1 * w_1 + x_2 * w_2 for ToyNetwork
-	called with computeQLLLoss(BATCH, 1, 1.0, target, fwdOut, loss) ;
-*/
-void computeQLLLoss(int32_t s1, int32_t s2, int32_t s3, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>> &target, vector<vector<FPArray>> &fwdOut, vector<FPArray> &loss){
-	// vector<FPArray> target_flat = make_vector_float(ALICE, s1); // true labels
-	vector<FPArray> out_flat = make_vector_float(ALICE, s1); // predictions
-	vector<FPArray> x_1 = make_vector_float(ALICE, s1);
-	vector<FPArray> x_2 = make_vector_float(ALICE, s1);
-	// assumes s3 = 2 for ToyNetwork
-	for (int i = 0; i < s1; i++)
-	{
-		// target_flat[i] = target[i][0];
-		out_flat[i] = fwdOut[i][0];
-		x_1[i] = inp[i][0];
-		x_2[i] = inp[i][1];
-	}
-	
-	vector<FPArray> t1 = make_vector_float(ALICE, s1);
-	vector<FPArray> t2 = make_vector_float(ALICE, s1);
-	vector<FPArray> t3 = make_vector_float(ALICE, s1);
-	vector<FPArray> t4 = make_vector_float(ALICE, s1);
-	vector<FPArray> t5 = make_vector_float(ALICE, s1);
-	vector<FPArray> t6 = make_vector_float(ALICE, s1);
-
-	// (y - x_1)^p
-	ElemWiseSub(s1, out_flat, x_1, t1);
-	Pow(s1, t1, p, t2);
-	// (y - x_2)^p
-	ElemWiseSub(s1, out_flat, x_2 , t3);
-	Pow(s1, t3, p, t4);
-	// (a + b)^(1/p)
-	ElemWiseAdd(s1, t2, t4, t5);
-	Sqrt(s1, t5, t6);
-
-	getLoss(s1, t6, loss);
-}
-
-void Pow(int32_t s1, vector<FPArray> &arr, float p, vector<FPArray> &outArr){
-	// a^p
-	ElemWiseMul(s1, arr, arr, outArr); // x * x = x^2
-
-	// (isInt, isOdd) = F_intOarity(b)
-	// s = a.s & isOdd
-	// if 1{b.z = 1} then return Float_p,q(1)
-	// else if 1{a.z = 1} then
-		// if 1{b.s = 0} then return (1, s, 1 - 2^p-1, 0) else return (0, s, 2^p-1, 2^q)
-	// else
-		// a' = (0, 0, a.e, a.m)
-		// delta = b [.] Log_2(a')
-		// gamma = F_FP_exp(delta)
-		// return (gamma.z, s,  gamma.e, gamma.m)
-	
 }
 
 void MatMul3(
@@ -3063,3 +2911,578 @@ void Gelu(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr) {
 	delete[] in_e ;
 }
 
+// QLL Derivative
+/*
+Hard-code derivative of loss function below:
+	L = (y - x_1) /\ (y - x_2)
+	y = x_1 * w_1 + x_2 * w_2 for ToyNetwork
+	a /\ b = (a^p + b^p)^(1/p)
+
+	L = ((x_1w_1 + x_2w_2 - x_1)^p + (x_1w_1 + x_2w_2 - x_2)^p)^(1/p)
+	dL/dw_1 = x_1((x_1w_1 + x_2w_2 - x_1)^p-1 + (x_1w_1 + x_2w_2 - x_2)^p-1)) * ((x_1w_1 + x_2w_2 - x_1)^p + (x_1w_1 + x_2w_2 - x_2)^p))^((1/p) - 1)
+	dL/dy = ((y - x_1)^p + (y - x_2)^p)^((1-p)/p) * ((y-x_1)^p-1 + (y-x_2)^p-1)
+
+*/
+// ToyNetwork calls with getQLLOutDer(BATCH, 1, 1.0, fwdOut, target, layer1Der) ;
+void getQLLOutDer(int32_t s1, int32_t s2, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>>& Y, vector<vector<FPArray>>& Yhat, vector<vector<FPArray>>& der) {
+	int sz = s1*s2 ;
+	int m_bits, e_bits ;
+	m_bits = Y[0][0].m_bits ;
+	e_bits = Y[0][0].e_bits ;
+	vector<FPArray> Y_flat = make_vector_float(ALICE, s1); // predictions
+	vector<FPArray> x_1 = make_vector_float(ALICE, s1);
+	vector<FPArray> x_2 = make_vector_float(ALICE, s1);
+	// assumes s3 = 2 for ToyNetwork
+	for (int i = 0; i < s1; i++)
+	{
+		// Yhat_flat[i] = Yhat[i][0];
+		Y_flat[i] = Y[i][0];
+		x_1[i] = inp[i][0];
+		x_2[i] = inp[i][1];
+	}
+	
+	vector<FPArray> t1 = make_vector_float(ALICE, s1);
+	vector<FPArray> t2 = make_vector_float(ALICE, s1);
+	vector<FPArray> t3 = make_vector_float(ALICE, s1);
+	vector<FPArray> t4 = make_vector_float(ALICE, s1);
+	vector<FPArray> t5 = make_vector_float(ALICE, s1);
+	vector<FPArray> t6 = make_vector_float(ALICE, s1);
+	vector<FPArray> t7 = make_vector_float(ALICE, s1);
+	vector<FPArray> t8= make_vector_float(ALICE, s1);
+	vector<FPArray> t9= make_vector_float(ALICE, s1);
+	vector<FPArray> t10= make_vector_float(ALICE, s1);
+
+	// (y - x_1)^p
+	ElemWiseSub(s1, Y_flat, x_1, t1);
+	Pow(s1, t1, p, t2);
+	// (y - x_2)^p
+	ElemWiseSub(s1, Y_flat, x_2 , t3);
+	Pow(s1, t3, p, t4);
+	// (a + b)^((1-p)/p)
+	ElemWiseAdd(s1, t2, t4, t5);
+	Sqrt(s1, t5, t6); // fix this
+
+	// (y-x_1)^p-1
+	// Pow(s1, t1, (p-1), t7);
+	// (y - x_2)^p-1
+	// Pow(s1, t3, (p-1), t8);
+	// a + b
+	ElemWiseAdd(s1, t1, t3, t9);
+	//
+	ElemWiseDiv(s1, t9, t6, t10);
+
+	vector<FPArray> divver = make_vector_float(ALICE, sz) ;
+	for (int i = 0 ; i < sz ; i++)
+		divver[i] = __fp_op->input<float>(ALICE, 1, (float)(1.0/(s1*s2)), m_bits, e_bits) ;
+	ElemWiseMul(sz, t10, divver, t10) ;
+
+	for (int i = 0, k = 0 ; i < s1 ; i++) 
+		for (int j = 0 ; j < s2 ; j++, k++)
+			der[i][j] = t10[k] ;
+}
+
+// Compute QLLLoss
+/*
+Hard-code this property into the loss (before auto-diff, etc.): 
+	L = (y - x_1) /\ (y - x_2)
+	y = x_1 * w_1 + x_2 * w_2 for ToyNetwork
+	called with computeQLLLoss(BATCH, 1, 1.0, target, fwdOut, loss) ;
+*/
+void computeQLLLoss(int32_t s1, int32_t s2, int32_t s3, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>> &target, vector<vector<FPArray>> &fwdOut, vector<FPArray> &loss){
+	// vector<FPArray> target_flat = make_vector_float(ALICE, s1); // true labels
+	vector<FPArray> out_flat = make_vector_float(ALICE, s1); // predictions
+	vector<FPArray> x_1 = make_vector_float(ALICE, s1);
+	vector<FPArray> x_2 = make_vector_float(ALICE, s1);
+	// assumes s3 = 2 for ToyNetwork
+	for (int i = 0; i < s1; i++)
+	{
+		// target_flat[i] = target[i][0];
+		out_flat[i] = fwdOut[i][0];
+		x_1[i] = inp[i][0];
+		x_2[i] = inp[i][1];
+	}
+	
+	vector<FPArray> a = make_vector_float(ALICE, s1);
+	vector<FPArray> b = make_vector_float(ALICE, s1);
+	vector<FPArray> c = make_vector_float(ALICE, s1);
+
+	// (y - x_1)^p
+	ElemWiseSub(s1, out_flat, x_1, a);
+	ElemWiseSub(s1, out_flat, x_2 , b);
+
+	PsumQLL(s1, a, b, p, c);
+
+	getLoss(s1, c, loss);
+}
+// a^p = exp(p*ln(a))
+void Pow_thread(
+	int tid, int sz, int m_bits, int e_bits,
+	uint8_t *in_s, uint8_t *in_z, uint64_t *in_m, uint64_t *in_e,   
+	uint8_t *out_s, uint8_t *out_z, uint64_t *out_m, uint64_t *out_e, float p
+	) {
+
+	FPArray in_flat = fpopArr[tid]->input(WHICHPARTY, sz, in_s, in_z, in_m, in_e, m_bits, e_bits) ;
+	FPArray p_flat = fpopArr[tid]->input<float>(PUBLIC, sz, p, m_bits, e_bits);
+	FPArray out_flat = fpmathArr[tid]->exp(fpopArr[tid]->mul(fpmathArr[tid]->ln(in_flat), p_flat)) ;
+	
+	memcpy(out_s, out_flat.s, sz*sizeof(uint8_t)) ;
+	memcpy(out_z, out_flat.z, sz*sizeof(uint8_t)) ;
+	memcpy(out_m, out_flat.m, sz*sizeof(uint64_t)) ;
+	memcpy(out_e, out_flat.e, sz*sizeof(uint64_t)) ;
+}
+
+void Pow(
+	int32_t s1, 
+	vector<FPArray> &inArr, 
+	float p,
+	vector<FPArray> &outArr) {
+	int m_bits, e_bits ;
+	m_bits = inArr[0].m_bits ;
+	e_bits = inArr[0].e_bits ;
+
+	uint8_t *in_s = new uint8_t[s1] ;
+	uint8_t *in_z = new uint8_t[s1] ;
+	uint64_t *in_m = new uint64_t[s1] ;
+	uint64_t *in_e = new uint64_t[s1] ;
+	for (int i = 0 ; i < s1 ; i++) {
+		in_s[i] = inArr[i].s[0] ;
+		in_z[i] = inArr[i].z[0] ;
+		in_m[i] = inArr[i].m[0] ;
+		in_e[i] = inArr[i].e[0] ;
+	}
+
+	uint8_t *out_s = new uint8_t[s1] ;
+	uint8_t *out_z = new uint8_t[s1] ;
+	uint64_t *out_m = new uint64_t[s1] ;
+	uint64_t *out_e = new uint64_t[s1] ;
+
+	vector<int> chunks = get_chunks(s1, __nt) ;
+	thread threads[MAX_THREADS] ;
+	int offset = 0 ;
+	for (int i = 0 ; i < __nt ; i++) {
+		if (chunks[i] > 0) {
+			threads[i] = thread(Pow_thread,
+				i, chunks[i], m_bits, e_bits,
+				in_s + offset, in_z + offset, in_m + offset, in_e + offset,
+				out_s + offset, out_z + offset, out_m + offset, out_e + offset, p
+			) ;
+			offset += chunks[i] ;
+		}
+	}
+
+	for (int i = 0 ; i < __nt ; i++)
+		if (chunks[i] > 0)
+			threads[i].join() ;
+
+	for (int i = 0 ; i < s1 ; i++) {
+		outArr[i].m_bits = m_bits ;
+		outArr[i].e_bits = e_bits ;
+
+		outArr[i].s[0] = out_s[i] ;
+		outArr[i].z[0] = out_z[i] ;
+		outArr[i].m[0] = out_m[i] ;
+		outArr[i].e[0] = out_e[i] ;
+	}
+
+	delete[] in_s ; delete[] out_s ;
+	delete[] in_z ; delete[] out_z ;
+	delete[] in_m ; delete[] out_m ;
+	delete[] in_e ; delete[] out_e ;
+}
+
+/*
+* QLL Connectives in Secfloat/Beacon
+*/
+
+void DualQLL_thread(
+	int tid, int sz, int m_bits, int e_bits,
+	uint8_t *in_s, uint8_t *in_z, uint64_t *in_m, uint64_t *in_e,   
+	uint8_t *out_s, uint8_t *out_z, uint64_t *out_m, uint64_t *out_e
+	) {
+
+	FPArray in_flat = fpopArr[tid]->input(WHICHPARTY, sz, in_s, in_z, in_m, in_e, m_bits, e_bits) ;
+	FPArray out_flat = fpopArr[tid]->dual_qll(in_flat) ;
+
+	memcpy(out_s, out_flat.s, sz*sizeof(uint8_t)) ;
+	memcpy(out_z, out_flat.z, sz*sizeof(uint8_t)) ;
+	memcpy(out_m, out_flat.m, sz*sizeof(uint64_t)) ;
+	memcpy(out_e, out_flat.e, sz*sizeof(uint64_t)) ;
+}
+
+void DualQLL(
+	int32_t s1, 
+	vector<FPArray> &inArr, 
+	vector<FPArray> &outArr) {
+	int m_bits, e_bits ;
+	m_bits = inArr[0].m_bits ;
+	e_bits = inArr[0].e_bits ;
+
+	uint8_t *in_s = new uint8_t[s1] ;
+	uint8_t *in_z = new uint8_t[s1] ;
+	uint64_t *in_m = new uint64_t[s1] ;
+	uint64_t *in_e = new uint64_t[s1] ;
+	for (int i = 0 ; i < s1 ; i++) {
+		in_s[i] = inArr[i].s[0] ;
+		in_z[i] = inArr[i].z[0] ;
+		in_m[i] = inArr[i].m[0] ;
+		in_e[i] = inArr[i].e[0] ;
+	}
+
+	uint8_t *out_s = new uint8_t[s1] ;
+	uint8_t *out_z = new uint8_t[s1] ;
+	uint64_t *out_m = new uint64_t[s1] ;
+	uint64_t *out_e = new uint64_t[s1] ;
+
+	vector<int> chunks = get_chunks(s1, __nt) ;
+	thread threads[MAX_THREADS] ;
+	int offset = 0 ;
+	for (int i = 0 ; i < __nt ; i++) {
+		if (chunks[i] > 0) {
+			threads[i] = thread(DualQLL_thread,
+				i, chunks[i], m_bits, e_bits,
+				in_s + offset, in_z + offset, in_m + offset, in_e + offset,
+				out_s + offset, out_z + offset, out_m + offset, out_e + offset
+			) ;
+			offset += chunks[i] ;
+		}
+	}
+
+	for (int i = 0 ; i < __nt ; i++)
+		if (chunks[i] > 0)
+			threads[i].join() ;
+
+	for (int i = 0 ; i < s1 ; i++) {
+		outArr[i].m_bits = m_bits ;
+		outArr[i].e_bits = e_bits ;
+
+		outArr[i].s[0] = out_s[i] ;
+		outArr[i].z[0] = out_z[i] ;
+		outArr[i].m[0] = out_m[i] ;
+		outArr[i].e[0] = out_e[i] ;
+	}
+
+	delete[] in_s ; delete[] out_s ;
+	delete[] in_z ; delete[] out_z ;
+	delete[] in_m ; delete[] out_m ;
+	delete[] in_e ; delete[] out_e ;
+}
+
+void ADualQLL_thread(
+	int tid, int sz, int m_bits, int e_bits,
+	uint8_t *in_s, uint8_t *in_z, uint64_t *in_m, uint64_t *in_e,   
+	uint8_t *out_s, uint8_t *out_z, uint64_t *out_m, uint64_t *out_e
+	) {
+
+	FPArray in_flat = fpopArr[tid]->input(WHICHPARTY, sz, in_s, in_z, in_m, in_e, m_bits, e_bits) ;
+	FPArray out_flat = fpopArr[tid]->adual_qll(in_flat) ;
+
+	memcpy(out_s, out_flat.s, sz*sizeof(uint8_t)) ;
+	memcpy(out_z, out_flat.z, sz*sizeof(uint8_t)) ;
+	memcpy(out_m, out_flat.m, sz*sizeof(uint64_t)) ;
+	memcpy(out_e, out_flat.e, sz*sizeof(uint64_t)) ;
+}
+
+void ADualQLL(
+	int32_t s1, 
+	vector<FPArray> &inArr, 
+	vector<FPArray> &outArr) {
+	int m_bits, e_bits ;
+	m_bits = inArr[0].m_bits ;
+	e_bits = inArr[0].e_bits ;
+
+	uint8_t *in_s = new uint8_t[s1] ;
+	uint8_t *in_z = new uint8_t[s1] ;
+	uint64_t *in_m = new uint64_t[s1] ;
+	uint64_t *in_e = new uint64_t[s1] ;
+	for (int i = 0 ; i < s1 ; i++) {
+		in_s[i] = inArr[i].s[0] ;
+		in_z[i] = inArr[i].z[0] ;
+		in_m[i] = inArr[i].m[0] ;
+		in_e[i] = inArr[i].e[0] ;
+	}
+
+	uint8_t *out_s = new uint8_t[s1] ;
+	uint8_t *out_z = new uint8_t[s1] ;
+	uint64_t *out_m = new uint64_t[s1] ;
+	uint64_t *out_e = new uint64_t[s1] ;
+
+	vector<int> chunks = get_chunks(s1, __nt) ;
+	thread threads[MAX_THREADS] ;
+	int offset = 0 ;
+	for (int i = 0 ; i < __nt ; i++) {
+		if (chunks[i] > 0) {
+			threads[i] = thread(ADualQLL_thread,
+				i, chunks[i], m_bits, e_bits,
+				in_s + offset, in_z + offset, in_m + offset, in_e + offset,
+				out_s + offset, out_z + offset, out_m + offset, out_e + offset
+			) ;
+			offset += chunks[i] ;
+		}
+	}
+
+	for (int i = 0 ; i < __nt ; i++)
+		if (chunks[i] > 0)
+			threads[i].join() ;
+
+	for (int i = 0 ; i < s1 ; i++) {
+		outArr[i].m_bits = m_bits ;
+		outArr[i].e_bits = e_bits ;
+
+		outArr[i].s[0] = out_s[i] ;
+		outArr[i].z[0] = out_z[i] ;
+		outArr[i].m[0] = out_m[i] ;
+		outArr[i].e[0] = out_e[i] ;
+	}
+
+	delete[] in_s ; delete[] out_s ;
+	delete[] in_z ; delete[] out_z ;
+	delete[] in_m ; delete[] out_m ;
+	delete[] in_e ; delete[] out_e ;
+}
+
+
+void ToMulQLL_thread(
+	int tid, int sz, int m_bits, int e_bits,
+	uint8_t *in_s, uint8_t *in_z, uint64_t *in_m, uint64_t *in_e,   
+	uint8_t *out_s, uint8_t *out_z, uint64_t *out_m, uint64_t *out_e
+	) {
+
+	FPArray in_flat = fpopArr[tid]->input(WHICHPARTY, sz, in_s, in_z, in_m, in_e, m_bits, e_bits) ;
+	FPArray out_flat = fpmathArr[tid]->exp(fpopArr[tid]->flip_sign(in_flat)) ;
+
+	memcpy(out_s, out_flat.s, sz*sizeof(uint8_t)) ;
+	memcpy(out_z, out_flat.z, sz*sizeof(uint8_t)) ;
+	memcpy(out_m, out_flat.m, sz*sizeof(uint64_t)) ;
+	memcpy(out_e, out_flat.e, sz*sizeof(uint64_t)) ;
+}
+
+void ToMulQLL(
+	int32_t s1, 
+	vector<FPArray> &inArr, 
+	vector<FPArray> &outArr) {
+	int m_bits, e_bits ;
+	m_bits = inArr[0].m_bits ;
+	e_bits = inArr[0].e_bits ;
+
+	uint8_t *in_s = new uint8_t[s1] ;
+	uint8_t *in_z = new uint8_t[s1] ;
+	uint64_t *in_m = new uint64_t[s1] ;
+	uint64_t *in_e = new uint64_t[s1] ;
+	for (int i = 0 ; i < s1 ; i++) {
+		in_s[i] = inArr[i].s[0] ;
+		in_z[i] = inArr[i].z[0] ;
+		in_m[i] = inArr[i].m[0] ;
+		in_e[i] = inArr[i].e[0] ;
+	}
+
+	uint8_t *out_s = new uint8_t[s1] ;
+	uint8_t *out_z = new uint8_t[s1] ;
+	uint64_t *out_m = new uint64_t[s1] ;
+	uint64_t *out_e = new uint64_t[s1] ;
+
+	vector<int> chunks = get_chunks(s1, __nt) ;
+	thread threads[MAX_THREADS] ;
+	int offset = 0 ;
+	for (int i = 0 ; i < __nt ; i++) {
+		if (chunks[i] > 0) {
+			threads[i] = thread(ToMulQLL_thread,
+				i, chunks[i], m_bits, e_bits,
+				in_s + offset, in_z + offset, in_m + offset, in_e + offset,
+				out_s + offset, out_z + offset, out_m + offset, out_e + offset
+			) ;
+			offset += chunks[i] ;
+		}
+	}
+
+	for (int i = 0 ; i < __nt ; i++)
+		if (chunks[i] > 0)
+			threads[i].join() ;
+
+	for (int i = 0 ; i < s1 ; i++) {
+		outArr[i].m_bits = m_bits ;
+		outArr[i].e_bits = e_bits ;
+
+		outArr[i].s[0] = out_s[i] ;
+		outArr[i].z[0] = out_z[i] ;
+		outArr[i].m[0] = out_m[i] ;
+		outArr[i].e[0] = out_e[i] ;
+	}
+
+	delete[] in_s ; delete[] out_s ;
+	delete[] in_z ; delete[] out_z ;
+	delete[] in_m ; delete[] out_m ;
+	delete[] in_e ; delete[] out_e ;
+}
+
+
+void ToAddQLL_thread(
+	int tid, int sz, int m_bits, int e_bits,
+	uint8_t *in_s, uint8_t *in_z, uint64_t *in_m, uint64_t *in_e,   
+	uint8_t *out_s, uint8_t *out_z, uint64_t *out_m, uint64_t *out_e
+	) {
+
+	FPArray in_flat = fpopArr[tid]->input(WHICHPARTY, sz, in_s, in_z, in_m, in_e, m_bits, e_bits) ;
+	FPArray out_flat = fpopArr[tid]->flip_sign(fpmathArr[tid]->ln(in_flat)) ;
+
+	memcpy(out_s, out_flat.s, sz*sizeof(uint8_t)) ;
+	memcpy(out_z, out_flat.z, sz*sizeof(uint8_t)) ;
+	memcpy(out_m, out_flat.m, sz*sizeof(uint64_t)) ;
+	memcpy(out_e, out_flat.e, sz*sizeof(uint64_t)) ;
+}
+
+void ToAddQLL(
+	int32_t s1, 
+	vector<FPArray> &inArr, 
+	vector<FPArray> &outArr) {
+	int m_bits, e_bits ;
+	m_bits = inArr[0].m_bits ;
+	e_bits = inArr[0].e_bits ;
+
+	uint8_t *in_s = new uint8_t[s1] ;
+	uint8_t *in_z = new uint8_t[s1] ;
+	uint64_t *in_m = new uint64_t[s1] ;
+	uint64_t *in_e = new uint64_t[s1] ;
+	for (int i = 0 ; i < s1 ; i++) {
+		in_s[i] = inArr[i].s[0] ;
+		in_z[i] = inArr[i].z[0] ;
+		in_m[i] = inArr[i].m[0] ;
+		in_e[i] = inArr[i].e[0] ;
+	}
+
+	uint8_t *out_s = new uint8_t[s1] ;
+	uint8_t *out_z = new uint8_t[s1] ;
+	uint64_t *out_m = new uint64_t[s1] ;
+	uint64_t *out_e = new uint64_t[s1] ;
+
+	vector<int> chunks = get_chunks(s1, __nt) ;
+	thread threads[MAX_THREADS] ;
+	int offset = 0 ;
+	for (int i = 0 ; i < __nt ; i++) {
+		if (chunks[i] > 0) {
+			threads[i] = thread(ToAddQLL_thread,
+				i, chunks[i], m_bits, e_bits,
+				in_s + offset, in_z + offset, in_m + offset, in_e + offset,
+				out_s + offset, out_z + offset, out_m + offset, out_e + offset
+			) ;
+			offset += chunks[i] ;
+		}
+	}
+
+	for (int i = 0 ; i < __nt ; i++)
+		if (chunks[i] > 0)
+			threads[i].join() ;
+
+	for (int i = 0 ; i < s1 ; i++) {
+		outArr[i].m_bits = m_bits ;
+		outArr[i].e_bits = e_bits ;
+
+		outArr[i].s[0] = out_s[i] ;
+		outArr[i].z[0] = out_z[i] ;
+		outArr[i].m[0] = out_m[i] ;
+		outArr[i].e[0] = out_e[i] ;
+	}
+
+	delete[] in_s ; delete[] out_s ;
+	delete[] in_z ; delete[] out_z ;
+	delete[] in_m ; delete[] out_m ;
+	delete[] in_e ; delete[] out_e ;
+}
+
+
+// /* P-Sum */
+// void qll_psum(double a, double b){ 
+// 	pow((pow(a, qll_p) + pow(b, qll_p)), 1.0 /qll_p) ;
+// }
+
+// \/ multiplicative p-sum: (a^p + b^p)^(1/p) = toMul(SmoothMin(toAdd a, toAdd b))
+void PsumQLL(int32_t s1, vector<FPArray>& arr1, vector<FPArray>& arr2, float p, vector<FPArray>& outArr) {
+	// note handle 0
+	vector<FPArray> ap = make_vector_float(ALICE, s1);
+	vector<FPArray> bp = make_vector_float(ALICE, s1);
+
+	Pow(s1, arr1, p, ap);
+	Pow(s1, arr2, p, bp);
+
+	ElemWiseAdd(s1, ap, bp, outArr);
+	Pow(s1, outArr, 1.0f/p, outArr);
+}
+
+// /\ multiplicative harmonic p-sum: (a^(-p) + b^(-p))^(-1/p) = toMul(SmoothMax(toAdd a, toAdd b))
+void HPsumQLL(int32_t s1, vector<FPArray>& arr1, vector<FPArray>& arr2, float p, vector<FPArray>& outArr){
+	// note handle 0
+	vector<FPArray> ap = make_vector_float(ALICE, s1);
+	vector<FPArray> bp = make_vector_float(ALICE, s1);
+
+	Pow(s1, arr1, -p, ap);
+	Pow(s1, arr2, -p, bp);
+
+	ElemWiseAdd(s1, ap, bp, outArr);
+	Pow(s1, outArr, -1.0f/p, outArr);
+}
+
+// \/ additive Psum: toAdd(Psum(toMul a, toMul b)) = -ln(e^(-pa) + e^(-pb)) / p
+// overflow shift by m = min(a, b): m − ln(e^(−p(a−m)) + e^(−p(b−m))) / p
+void SmoothMinQLL(int32_t s1, vector<FPArray>& arr1, vector<FPArray>& arr2, float p, vector<FPArray>& outArr){
+	vector<FPArray> ap = make_vector_float(ALICE, s1);
+	vector<FPArray> bp = make_vector_float(ALICE, s1);
+	
+	scalarMultiplication(s1, p, arr1, ap);
+	scalarMultiplication(s1, p, arr2, bp);
+	ToMulQLL(s1, ap, ap);
+	ToMulQLL(s1, bp, bp);
+	ElemWiseAdd(s1, ap, bp, outArr);
+	ToAddQLL(s1, outArr, outArr);
+	scalarMultiplication(s1, 1.0f/p, outArr, outArr);
+}
+// /\ additive HPsum: toAdd(HPsum(toMul a, toMul b)) = ln(e^(pa) + e^(pb)) / p
+// overflow shift by m = max(a, b), m + ln(e^(p(a−m)) + e^(p(b−m))) / p
+void SmoothMaxQLL(int32_t s1, vector<FPArray>& arr1, vector<FPArray>& arr2, float p, vector<FPArray>& outArr){
+	vector<FPArray> ap = make_vector_float(ALICE, s1);
+	vector<FPArray> bp = make_vector_float(ALICE, s1);
+	
+	scalarMultiplication(s1, -p, arr1, ap);
+	scalarMultiplication(s1, -p, arr2, bp);
+	ToMulQLL(s1, ap, ap);
+	ToMulQLL(s1, bp, bp);
+	ElemWiseAdd(s1, ap, bp, outArr);
+	ToAddQLL(s1, outArr, outArr);
+	scalarMultiplication(s1, -1.0f/p, outArr, outArr);
+}
+
+void PsumQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPArray>>& d1, vector<FPArray>& arr2, vector<vector<FPArray>>& d2, float p, vector<FPArray>& outArr, vector<vector<FPArray>>& dOut){
+	// forward psum
+	vector<FPArray> ap = make_vector_float(ALICE, s1);
+	vector<FPArray> bp = make_vector_float(ALICE, s1);
+	vector<FPArray> ap_minus = make_vector_float(ALICE, s1);
+	vector<FPArray> bp_minus = make_vector_float(ALICE, s1);
+	vector<FPArray> S = make_vector_float(ALICE, s1);
+	vector<FPArray> t = make_vector_float(ALICE, s1);
+	vector<FPArray> out = make_vector_float(ALICE, s1);
+	
+	Pow(s1, arr1, p-1, ap_minus);
+	Pow(s1, arr2, p-1, bp_minus);
+	ElemWiseMul(s1, arr1, ap_minus, ap);
+	ElemWiseMul(s1, arr2, bp_minus, bp);
+
+	ElemWiseAdd(s1, ap, bp, S);
+	Pow(s1, S, (1.0f - p)/p, t);
+	ElemWiseMul(s1, t, S, out);
+
+	// local partials
+	vector<FPArray> wa = make_vector_float(ALICE, s1);
+	vector<FPArray> wb = make_vector_float(ALICE, s1);
+
+	ElemWiseMul(s1, ap_minus, t, wa); // (a^p/a)(out/S)
+	ElemWiseMul(s1, bp_minus, t, wb); // (b^p/b)(out/S)
+	
+	// chain rule
+	vector<FPArray> da = make_vector_float(ALICE, s1);
+	vector<FPArray> db = make_vector_float(ALICE, s1);
+	for (int j = 0; j < k; j++){
+		ElemWiseMul(s1, wa, d1[j], da);
+		ElemWiseMul(s1, wb, d2[j], db);
+		ElemWiseAdd(s1, db, da, dOut[j]);
+	}
+
+	outArr = out;
+}

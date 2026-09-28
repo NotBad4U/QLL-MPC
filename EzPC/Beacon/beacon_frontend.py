@@ -272,7 +272,7 @@ float_fl[{l.out_features}] layer{ind+1}bMom ;\n\
         return f"forward({arg_list}) ;\n"
     
     def get_loss_call(self) :
-        p_arg = f"{self.net.in_dim}, {self.qll_p}, inp " if self.loss == "QLL" else ""
+        p_arg = f"{self.net.in_dim}, {self.qll_p}, inp, " if self.loss == "QLL" else ""
         return f"{LOSSES[self.loss][1]}(BATCH, {self.net.no_class}, {p_arg} target, fwdOut, loss) ;\n"
     
     def get_backward_call(self) :

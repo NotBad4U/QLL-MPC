@@ -2946,20 +2946,25 @@ void getQLLOutDer(int32_t s1, int32_t k, float p, vector<vector<FPArray>> &inp, 
 	vector<FPArray> b = make_vector_float(ALICE, s1);
 	ElemWiseSub(s1, Y_flat, x_1, a);
 	ElemWiseSub(s1, Y_flat, x_2 , b);
+
+	ToMulQLL(s1, a, a);
+	ToMulQLL(s1, b, b);
 	
-	// (y - x_1) /\ (y - x_2)
 	vector<vector<FPArray>> d1 = make_vector_float(ALICE, k, s1);
 	vector<vector<FPArray>> d2 = make_vector_float(ALICE, k, s1);
-	
-	for(int i = 0; i < s1; i++){
-		d1[0][i] = __fp_op->input<float>(ALICE, 1, 1.0f, m_bits, e_bits);
-		d2[0][i] = __fp_op->input<float>(ALICE, 1, 1.0f, m_bits, e_bits);
 
-		d1[0][i].s[0] = a[i].s[0];
-		d2[0][i].s[0] = b[i].s[0];
-		a[i].s[0] = 0;
-		b[i].s[0] = 0;
-	}
+	ADualQLL(s1, a, d1[0]);
+	ADualQLL(s1, b, d2[0]);
+	
+	// for(int i = 0; i < s1; i++){
+	// 	d1[0][i] = __fp_op->input<float>(ALICE, 1, 1.0f, m_bits, e_bits);
+	// 	d2[0][i] = __fp_op->input<float>(ALICE, 1, 1.0f, m_bits, e_bits);
+
+	// 	d1[0][i].s[0] = a[i].s[0];
+	// 	d2[0][i].s[0] = b[i].s[0];
+	// 	a[i].s[0] = 0;
+	// 	b[i].s[0] = 0;
+	// }
 
 	vector<FPArray> L = make_vector_float(ALICE, s1);
 	vector<vector<FPArray>> dL = make_vector_float(ALICE, k, s1);
@@ -3002,6 +3007,10 @@ void computeQLLLoss(int32_t s1, int32_t s2, int32_t s3, float p, vector<vector<F
 	ElemWiseSub(s1, out_flat, x_1, a);
 	ElemWiseSub(s1, out_flat, x_2 , b);
 	// a \/ b
+	// to mul
+	ToMulQLL(s1, a, a);
+	ToMulQLL(s1, b, b);
+
 	PsumQLL(s1, a, b, p, c);
 
 	// mean over batch, getLoss(s1, c, loss);
@@ -3613,4 +3622,22 @@ void SmoothMaxQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector
 	}
 
 	outArr = out;
+}
+
+// |x|: both parties clear share of the sign bit
+// no interaction/threads needed
+void AbsQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr) {
+	for (int i = 0; i < s1; i++) {
+		outArr[i] = inArr[i];
+		outArr[i].s[0] = 0;
+	}
+}
+// x * sgn(y): the sign shares
+// no interaction/threads needed
+void MulSignQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &signArr, vector<FPArray> &outArr) {
+	for (int i = 0; i < s1; i++) {
+		uint8_t s = inArr[i].s[0] ^ signArr[i].s[0];
+		outArr[i] = inArr[i];
+		outArr[i].s[0] = s;
+	}
 }

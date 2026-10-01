@@ -11,6 +11,8 @@ import torch
 import torch.nn.functional as F
 from compile_networks import MNISTFFNN, MNISTLogistic, ToyNetwork
 from torch import nn
+from torch.fx.experimental.proxy_tensor import make_fx
+from torch.func import grad
 #%% 
 class Carrier:
     def __init__(self, p):
@@ -20,15 +22,15 @@ class Mul(Carrier):
     def tensor(self, a, b): return a * b
     def par(self, a, b): return a * b
     def disj(self, a, b): return (a**self.p + b**self.p)**(1/self.p)
-    def conf(self, a, b): return (a**-self.p + b**-self.p)**(-1/self.p)
+    def conj(self, a, b): return (a**-self.p + b**-self.p)**(-1/self.p)
     def implies(self, a, b): return self.par(self.dual(a), b)
     def dual(self, a): return 1/a
 
 class Add(Carrier):
     def tensor(self, a, b): return a + b
     def par(self, a, b): return a + b
-    def disj(self, a, b): return -(1/self.p) * torch.log(torch.exp(-a * self.p) + torch.exp(-b * self.b))
-    def conj(self, a, b): return (1/self.p) * torch.log(torch.exp(a * self.p) + torch.exp(b * self.b))
+    def disj(self, a, b): return -(1/self.p) * torch.log(torch.exp(-a * self.p) + torch.exp(-b * self.p))
+    def conj(self, a, b): return (1/self.p) * torch.log(torch.exp(a * self.p) + torch.exp(b * self.p))
     def implies(self, a, b): return self.par(self.dual(a), b)
     def dual(self, a): return -a
 
@@ -68,7 +70,8 @@ def main(argv=None):
     for i in range(args.iters):
         y = net(X)
         a, b = atoms(X, y)
-        loss = q.disj(a.abs(),b.abs()).mean()
+        loss = q.disj(to_mul(a),to_mul(b)).mean()
+        # loss = q.disj(a, b).mean()
         print(f"   iteration {i+1}: {loss.item():.15g}")
 
         net.zero_grad()
@@ -84,4 +87,23 @@ if __name__ == "__main__":
         main()
 
 # main(["ToyNetwork", "128", "5", "0.01", "2.0"])
+# %%
+
+# quick visualization 
+q = Add(2.0)
+def toy_spec(y0, x0, x1):
+    return q.disj((y0 - x0).abs(), (y0 - x1).abs())
+
+example = [torch.rand(()) for _ in range(3)]
+loss_gm = make_fx(toy_spec)(*example)
+der_gm = make_fx(grad(toy_spec))(*example)
+
+print("==== LOSS GRAPH MODULE====")
+for n in loss_gm.graph.nodes:
+    print(n.op, n.name, n.target, n.args)
+print("==== DERIVATIVE GRAPH MODULE ====") 
+# note: derivatives are not mpc friendly
+# write custom torch grad functions that are mpc friendly
+for n in loss_gm.graph.nodes:
+    print(n.op, n.name, n.target, n.args)
 # %%

@@ -1,10 +1,95 @@
+#%%
 from torch import nn
+import torch
+from torch.fx.experimental.proxy_tensor import make_fx
+from torch.func import grad
 
 LOSSES = {
     "CE":     ("Softmax2",  "computeCELoss",  "getOutDer"),
     "MSE":    ("Reassign2", "computeMSELoss", "getOutDer"),
-    "QLL":    ("Reassign2", "computeQLLLoss",  "getQLLOutDer"),
+    "QLL":    ("Reassign2", "computeQLLLoss",  "getQLLOutDer"), # hard-coded QLL loss and derivatives for each operator in mul/add domains
+    "TorchQLL":    ("Reassign2", "computeTorchQLLLoss",  "getTorchQLLOutDer"), # torch autograd loss and derivative graph module
 }
+#%%
+class Carrier:
+    def __init__(self, p):
+        self.p = p
+class Mul(Carrier):
+    """Multiplicative Reals operators of QLL"""
+    def tensor(self, a, b): return a * b
+    def par(self, a, b): return a * b
+    def disj(self, a, b): return (a**self.p + b**self.p)**(1/self.p)
+    def conj(self, a, b): return (a**-self.p + b**-self.p)**(-1/self.p)
+    def implies(self, a, b): return self.par(self.dual(a), b)
+    def dual(self, a): return 1/a
+
+class Add(Carrier):
+    """Additive Reals operators of QLL"""
+    def tensor(self, a, b): return a + b
+    def par(self, a, b): return a + b
+    def disj(self, a, b): return -(1/self.p) * torch.log(torch.exp(-a * self.p) + torch.exp(-b * self.p))
+    def conj(self, a, b): return (1/self.p) * torch.log(torch.exp(a * self.p) + torch.exp(b * self.p))
+    def implies(self, a, b): return self.par(self.dual(a), b)
+    def dual(self, a): return -a
+
+# Napiers Isomorphism from multiplicative domain to additive
+def to_add(a): return -torch.log(a)
+
+# Napiers Isomorphism from additive domain to multiplicative
+def to_mul(a): return torch.exp(-a)
+
+def toy_spec(q, y0, x0, x1):
+    """QLL Loss for ToyNetwork 
+        L = (y - x0) \\/ (y - x1) """
+    return q.disj((y0 - x0).abs(), (y0 - x1).abs())
+
+def trace_spec(p):
+    """Return torch loss_gm and der_gm for toy_spec with Mul(p).
+        loss tree and gradient tree"""
+    q = Add(p)
+    spec = lambda y0, x0, x1: toy_spec(y0, x0, x1)
+    example = [torch.rand(()) for _ in range(3)]
+    loss_gm = make_fx(spec)(*example)
+    der_gm = make_fx(grad(spec))(*example)
+    return loss_gm, der_gm
+
+def to_ezpc_float(c):
+    """torch literal to ezpc literal"""
+    pass
+
+# Operations whose arguments are arrays to EzPC function
+ARRAY_OPS = {
+    "aten.add.Tensor":        "ElemWiseAdd",
+    "aten.sub.Tensor":        "ElemWiseSub",
+    "aten.mul.Tensor":        "ElemWiseMul",
+    "aten.div.Tensor":        "ElemWiseDiv",
+    "aten.abs.default":       "AbsQLL",
+    "aten.neg.default":       "ADualQLL",
+    "aten.sgn.default":       "MulSignQLL",
+    "aten.exp.default":       "ExpQLL",
+    "aten.log.default":       "Ln",
+    "aten.ones_like.default": "OnesLikeQLL",
+}
+
+# Operations of a number and array: EzPC function and constant to pass
+CONST_OPS = {
+    "aten.mul.Tensor": ("scalarMultiplication", lambda c: c),
+    "aten.mul.Scalar": ("scalarMultiplication", lambda c: c),
+    "aten.div.Tensor": ("scalarMultiplication", lambda c: 1/c),
+    "aten.add.Tensor": ("AddScalarQLL", lambda c: c),
+    "aten.sub.Tensor": ("AddScalarQLL", lambda c: -c),
+}
+
+def translate_node(node, names, out):
+    """translate one graph node from one EzPC function"""
+    pass
+
+def torch_to_ezpc(gm, fname, is_der, batch, in_dim, out_dim):
+    """Build EzPC function for computing loss or derivative
+        loss: void computeTorchQLLLoss(){}
+        der: void getTorchQLLOutDer(){}"""
+    pass
+
 class Layer :
     def __init__(self, in_features, out_features, layer_no) :
         assert 0 < layer_no
@@ -188,6 +273,8 @@ float_fl[{outf}] layer{ind}bDer ;\n\
             arg5 = f"layer{ind}Der"
             p_arg = f"{self.qll_p}, layer{ind}In," if self.loss == "QLL" and ind == net_len else ""
             arg_list = f"{arg1}, {arg2}, {p_arg}{arg3}, {arg4}, {arg5}"
+            if self.loss == "TorchQLL" and ind == net_len:
+                arg_list = f"layer1In, target, fwdOut, layer{ind}Der"
 
             arg_list = arg_list + (", true" if ind != net_len else '')
             func_name = LOSSES[self.loss][2] if ind == net_len else "IfElse2"
@@ -272,6 +359,8 @@ float_fl[{l.out_features}] layer{ind+1}bMom ;\n\
         return f"forward({arg_list}) ;\n"
     
     def get_loss_call(self) :
+        if self.loss == "TorchQLL":
+            return f"computeTorchQLLLoss(inp, target, fwdOut, loss) ;"
         p_arg = f"{self.net.in_dim}, {self.qll_p}, inp, " if self.loss == "QLL" else ""
         return f"{LOSSES[self.loss][1]}(BATCH, {self.net.no_class}, {p_arg} target, fwdOut, loss) ;\n"
     
@@ -312,13 +401,23 @@ def void main () {brace_open}\n\
 {iter_decl}\n\
 {self.get_training_loop()}\n\
 {brace_close}"
+
+    def get_torch_qll_defs(self):
+        """ Build loss and derivative trace from torch -> ezpc
+            loss_gm (graph module): computeTorchQLLLoss
+            der_gm: getTorchQLLOutDer"""
+        loss_gm, der_gm = trace_spec(self.qll_p)
+        args = (self.batch, self.net.in_dim, self.net.no_class)
+        return torch_to_ezpc(loss_gm, "computeTorchQLLLoss", False, *args) + "\n" + torch_to_ezpc(der_gm, "computeTorchQLLOutDer", True, *args)
         
     def get_whole_program(self) :
         decl = self.get_batch_decl()
         fwd = self.get_forward_func()
         back = self.get_backward_func()
+        qll = self.get_torch_qll_defs() if self.loss == "TorchQLL" else ""
         return f"\
 {decl}\n\n\
+{qll}\n\n\
 {fwd}\n\n\
 {back}\n\n\
 {self.get_main()}"

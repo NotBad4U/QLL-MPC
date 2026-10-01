@@ -133,7 +133,6 @@ class ToyNetwork(nn.Module):
 
 ## Dumping weights and input
 
-
 class Ez_Network(nn.Module):
     def __init__(self, layers, log=False):
         super(Ez_Network, self).__init__()
@@ -193,7 +192,7 @@ def get_pytorch_stuff_ffnn(ez, log=False):
             f.close()
 
         net_out = torch.stack([torch.argmax(row) for row in randperm])
-    elif ez.loss in ("MSE", "QLL"):
+    elif ez.loss in ("MSE", "QLL", "TorchQLL"):
         target_vals = 10 * torch.rand(ez.batch, 1).to(dtype)
         with open(f"{ez.name}_labels{ez.batch}.inp", "w") as f:
             for el in target_vals.flatten():
@@ -201,23 +200,6 @@ def get_pytorch_stuff_ffnn(ez, log=False):
             f.close()
 
         net_out = target_vals
-    # ffnn qll loss
-    # elif ez.loss == "QLL":
-    #     # update for qll
-    #     randperm = torch.cat(
-    #         [torch.randperm(ez.net.no_class) for _ in range(ez.batch)]
-    #     ).reshape(ez.batch, ez.net.no_class)
-
-    #     lab_out = torch.cat(
-    #         [(row == ez.net.no_class - 1).to(torch.int64) for row in randperm]
-    #     ).reshape(ez.batch, ez.net.no_class)
-
-    #     with open(f"{ez.name}_labels{ez.batch}.inp", "w") as f:
-    #         for el in lab_out.flatten():
-    #             f.write(str(el.item()) + "\n")
-    #         f.close()
-
-    #     net_out = torch.stack([torch.argmax(row) for row in randperm])
 
     return net, net_inp, net_out
 

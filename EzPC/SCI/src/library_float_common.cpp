@@ -2937,40 +2937,34 @@ void getQLLOutDer(int32_t s1, int32_t k, float p, vector<vector<FPArray>> &inp, 
 	{
 		// Yhat_flat[i] = Yhat[i][0];
 		Y_flat[i] = Y[i][0];
-		x_1[i] = inp[i][0];
-		x_2[i] = inp[i][1];
+		x_1[i] = inp[i][0]; // x0
+		x_2[i] = inp[i][1]; // x1
 	}
 	
-	// (y - x_1),  (y - x_2)
+	
 	vector<FPArray> a = make_vector_float(ALICE, s1);
 	vector<FPArray> b = make_vector_float(ALICE, s1);
+	// (y - x0),  (y - x1)
 	ElemWiseSub(s1, Y_flat, x_1, a);
 	ElemWiseSub(s1, Y_flat, x_2 , b);
 
+	// Convert inputs to multiplciative domain
 	ToMulQLL(s1, a, a);
 	ToMulQLL(s1, b, b);
 	
 	vector<vector<FPArray>> d1 = make_vector_float(ALICE, k, s1);
 	vector<vector<FPArray>> d2 = make_vector_float(ALICE, k, s1);
 
+	// innermost derivatives of chain rule da db
 	ADualQLL(s1, a, d1[0]);
 	ADualQLL(s1, b, d2[0]);
-	
-	// for(int i = 0; i < s1; i++){
-	// 	d1[0][i] = __fp_op->input<float>(ALICE, 1, 1.0f, m_bits, e_bits);
-	// 	d2[0][i] = __fp_op->input<float>(ALICE, 1, 1.0f, m_bits, e_bits);
-
-	// 	d1[0][i].s[0] = a[i].s[0];
-	// 	d2[0][i].s[0] = b[i].s[0];
-	// 	a[i].s[0] = 0;
-	// 	b[i].s[0] = 0;
-	// }
 
 	vector<FPArray> L = make_vector_float(ALICE, s1);
 	vector<vector<FPArray>> dL = make_vector_float(ALICE, k, s1);
 	// dL
 	PsumQLLDer(s1, k, a, d1, b, d2, p, L, dL);
 
+	// scale to account for batch size
 	for(int j = 0; j < k; j++){
 		scalarMultiplication(s1, 1.0f/s1, dL[j], dL[j]);
 		for (int i = 0; i < s1 ; i++){
@@ -3006,11 +3000,11 @@ void computeQLLLoss(int32_t s1, int32_t s2, int32_t s3, float p, vector<vector<F
 	// a = (y - x_1), b = (y - x_1)
 	ElemWiseSub(s1, out_flat, x_1, a);
 	ElemWiseSub(s1, out_flat, x_2 , b);
-	// a \/ b
 	// to mul
 	ToMulQLL(s1, a, a);
 	ToMulQLL(s1, b, b);
 
+	// a \/ b
 	PsumQLL(s1, a, b, p, c);
 
 	// mean over batch, getLoss(s1, c, loss);
@@ -3029,7 +3023,7 @@ void Pow_thread(
 	uint8_t *in_s, uint8_t *in_z, uint64_t *in_m, uint64_t *in_e,   
 	uint8_t *out_s, uint8_t *out_z, uint64_t *out_m, uint64_t *out_e, float p
 	) {
-
+	
 	FPArray in_flat = fpopArr[tid]->input(WHICHPARTY, sz, in_s, in_z, in_m, in_e, m_bits, e_bits) ;
 	FPArray p_flat = fpopArr[tid]->input<float>(PUBLIC, sz, p, m_bits, e_bits);
 	FPArray out_flat = fpmathArr[tid]->exp(fpopArr[tid]->mul(fpmathArr[tid]->ln(in_flat), p_flat)) ;
@@ -3639,5 +3633,96 @@ void MulSignQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &signArr, ve
 		uint8_t s = inArr[i].s[0] ^ signArr[i].s[0];
 		outArr[i] = inArr[i];
 		outArr[i].s[0] = s;
+	}
+}
+
+// start pytorch chain rule gradient with ones, copy of torch.func.grad ones_like(output)
+void OnesLikeQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr) {
+	int m_bits = inArr[0].m_bits ;
+	int e_bits = inArr[0].e_bits ;
+	for (int i = 0 ; i < s1 ; i++)
+		outArr[i] = __fp_op->input<float>(ALICE, 1, 1.0f, m_bits, e_bits) ;
+}
+
+void Exp_thread(
+	int tid, int sz, int m_bits, int e_bits,
+	uint8_t *in_s, uint8_t *in_z, uint64_t *in_m, uint64_t *in_e,   
+	uint8_t *out_s, uint8_t *out_z, uint64_t *out_m, uint64_t *out_e
+	) {
+
+	FPArray in_flat = fpopArr[tid]->input(WHICHPARTY, sz, in_s, in_z, in_m, in_e, m_bits, e_bits) ;
+	FPArray out_flat = fpmathArr[tid]->exp(in_flat) ;
+
+	memcpy(out_s, out_flat.s, sz*sizeof(uint8_t)) ;
+	memcpy(out_z, out_flat.z, sz*sizeof(uint8_t)) ;
+	memcpy(out_m, out_flat.m, sz*sizeof(uint64_t)) ;
+	memcpy(out_e, out_flat.e, sz*sizeof(uint64_t)) ;
+}
+
+void Exp(
+	int32_t s1, 
+	vector<FPArray> &inArr, 
+	vector<FPArray> &outArr) {
+	int m_bits, e_bits ;
+	m_bits = inArr[0].m_bits ;
+	e_bits = inArr[0].e_bits ;
+
+	uint8_t *in_s = new uint8_t[s1] ;
+	uint8_t *in_z = new uint8_t[s1] ;
+	uint64_t *in_m = new uint64_t[s1] ;
+	uint64_t *in_e = new uint64_t[s1] ;
+	for (int i = 0 ; i < s1 ; i++) {
+		in_s[i] = inArr[i].s[0] ;
+		in_z[i] = inArr[i].z[0] ;
+		in_m[i] = inArr[i].m[0] ;
+		in_e[i] = inArr[i].e[0] ;
+	}
+
+	uint8_t *out_s = new uint8_t[s1] ;
+	uint8_t *out_z = new uint8_t[s1] ;
+	uint64_t *out_m = new uint64_t[s1] ;
+	uint64_t *out_e = new uint64_t[s1] ;
+
+	vector<int> chunks = get_chunks(s1, __nt) ;
+	thread threads[MAX_THREADS] ;
+	int offset = 0 ;
+	for (int i = 0 ; i < __nt ; i++) {
+		if (chunks[i] > 0) {
+			threads[i] = thread(Exp_thread,
+				i, chunks[i], m_bits, e_bits,
+				in_s + offset, in_z + offset, in_m + offset, in_e + offset,
+				out_s + offset, out_z + offset, out_m + offset, out_e + offset
+			) ;
+			offset += chunks[i] ;
+		}
+	}
+
+	for (int i = 0 ; i < __nt ; i++)
+		if (chunks[i] > 0)
+			threads[i].join() ;
+
+	for (int i = 0 ; i < s1 ; i++) {
+		outArr[i].m_bits = m_bits ;
+		outArr[i].e_bits = e_bits ;
+
+		outArr[i].s[0] = out_s[i] ;
+		outArr[i].z[0] = out_z[i] ;
+		outArr[i].m[0] = out_m[i] ;
+		outArr[i].e[0] = out_e[i] ;
+	}
+
+	delete[] in_s ; delete[] out_s ;
+	delete[] in_z ; delete[] out_z ;
+	delete[] in_m ; delete[] out_m ;
+	delete[] in_e ; delete[] out_e ;
+}
+
+// sign(a), take a's sign bit s
+void SignQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr){
+	int m_bits = inArr[0].m_bits ;
+	int e_bits = inArr[0].e_bits ;
+	for (int i = 0; i < s1; i++){
+		outArr[i] = __fp_op->input<float>(ALICE, 1, 1.0f, m_bits, e_bits);
+		outArr[i].s[0] = inArr[i].s[0] ;
 	}
 }

@@ -193,30 +193,54 @@ void AllOneDividedBySizeArray(int32_t s, vector<FPArray> &inArr) ;
 void getOutDer(int32_t s1, int32_t s2, vector<vector<FPArray>> &P, vector<vector<FPArray>> &Phat, vector<vector<FPArray>> &der);
 
 /* QLL */
+// Compute derivative w.r.t. network output, just last layer of network dL/dy
 void getQLLOutDer(int32_t s1, int32_t s2, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>> &Z, vector<vector<FPArray>> &Y, vector<vector<FPArray>> &der);
+
+// Compute QLL Spec loss (hardcoded version)
 void computeQLLLoss(int32_t s1, int32_t s2, int32_t s3, float p, vector<vector<FPArray>> &inp, vector<vector<FPArray>> &Y, vector<vector<FPArray>> &Z, vector<FPArray> &loss);
+
+// a^p
 void Pow(int32_t s1, vector<FPArray> &arr, float p, vector<FPArray> &outArr);
-void DualQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr);
-void ADualQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr);
-void ToAddQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr);
-void ToMulQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr);
+
+// Dualities in multiplicative and additive domain
+void DualQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr);  // 1/a
+void ADualQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr); // -a
+
+// Napier's Isomprphism
+void ToAddQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr); // -log(x)
+void ToMulQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr); // exp(-x)
+
+// exp(x)
+void Exp(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr);
 
 // \/ multiplicative p-sum: (a^p + b^p)^(1/p) = toMul(SmoothMin(toAdd a, toAdd b))
 void PsumQLL(int32_t s1, vector<FPArray>& arr1, vector<FPArray>& arr2, float p, vector<FPArray>& outArr);
+// Dervative of PSumQLL
 void PsumQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPArray>>& d1, vector<FPArray>& arr2, vector<vector<FPArray>>& d2, float p, vector<FPArray>& outArr, vector<vector<FPArray>>& dOut);
 
 // /\ multiplicative harmonic p-sum: (a^(-p) + b^(-p))^(-1/p) = toMul(SmoothMax(toAdd a, toAdd b))
 void HPsumQLL(int32_t s1, vector<FPArray>& arr1, vector<FPArray>& arr2, float p, vector<FPArray>& outArr);
+// Dervative of HPSumQLL
 void HPsumQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPArray>>& d1, vector<FPArray>& arr2, vector<vector<FPArray>>& d2, float p, vector<FPArray>& outArr, vector<vector<FPArray>>& dOut);
 
 // \/ additive Psum: toAdd(Psum(toMul a, toMul b)) = -ln(e^(-pa) + e^(-pb)) / p
 void SmoothMinQLL(int32_t s1, vector<FPArray>& arr1, vector<FPArray>& arr2, float p, vector<FPArray>& outArr);
+// Dervative of SmoothMinQLL
 void SmoothMinQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPArray>>& d1, vector<FPArray>& arr2, vector<vector<FPArray>>& d2, float p, vector<FPArray>& outArr, vector<vector<FPArray>>& dOut);
 
 // /\ additive HPsum: toAdd(HPsum(toMul a, toMul b)) = ln(e^(pa) + e^(pb)) / p
 void SmoothMaxQLL(int32_t s1, vector<FPArray>& arr1, vector<FPArray>& arr2, float p, vector<FPArray>& outArr);
+// Dervative of SmoothMaxQLL
 void SmoothMaxQLLDer(int32_t s1, int32_t k, vector<FPArray>& arr1, vector<vector<FPArray>>& d1, vector<FPArray>& arr2, vector<vector<FPArray>>& d2, float p, vector<FPArray>& outArr, vector<vector<FPArray>>& dOut);
 
+// Absolute value
+void AbsQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr);
+void MulSignQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &signArr, vector<FPArray> &outArr);
+// Create vector of ones for computing gradient along with torch convention
+void OnesLikeQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr);
+
+// sign(a), a's share of the sign bit
+void SignQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr);
 
 void MatMul(int32_t m, int32_t n, int32_t p,
 			vector<vector<FPArray>> &A,

@@ -3,14 +3,15 @@ from torch import nn
 import torch
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.func import grad
+from torch.fx import Node 
 
 LOSSES = {
     "CE":     ("Softmax2",  "computeCELoss",  "getOutDer"),
     "MSE":    ("Reassign2", "computeMSELoss", "getOutDer"),
     "QLL":    ("Reassign2", "computeQLLLoss",  "getQLLOutDer"), # hard-coded QLL loss and derivatives for each operator in mul/add domains
-    "TorchQLL":    ("Reassign2", "computeTorchQLLLoss",  "getTorchQLLOutDer"), # torch autograd loss and derivative graph module
+    "TorchQLL":    ("Reassign2", "computeTorchQLLLoss",  "getTorchQLLOutDer"), # trace torch autograd graph module for loss and derivative translation to ezpc for QLL
 }
-#%%
+
 class Carrier:
     def __init__(self, p):
         self.p = p
@@ -46,16 +47,22 @@ def toy_spec(q, y0, x0, x1):
 def trace_spec(p):
     """Return torch loss_gm and der_gm for toy_spec with Mul(p).
         loss tree and gradient tree"""
-    q = Add(p)
-    spec = lambda y0, x0, x1: toy_spec(y0, x0, x1)
+    q = Mul(p)
+    spec = lambda y0, x0, x1: toy_spec(q, y0, x0, x1)
     example = [torch.rand(()) for _ in range(3)]
     loss_gm = make_fx(spec)(*example)
     der_gm = make_fx(grad(spec))(*example)
     return loss_gm, der_gm
 
 def to_ezpc_float(c):
-    """torch literal to ezpc literal"""
-    pass
+    """torch literal to ezpc literal
+    EzPC only accepts decimals with a point, i.e. 1.0, -0.4, 2.34
+    Not 2, 1e-05"""
+    text = f"{float(c):.12f}"
+    text = text.rstrip("0")
+    if text.endswith("."):
+        text += "0"
+    return text
 
 # Operations whose arguments are arrays to EzPC function
 ARRAY_OPS = {
@@ -65,9 +72,10 @@ ARRAY_OPS = {
     "aten.div.Tensor":        "ElemWiseDiv",
     "aten.abs.default":       "AbsQLL",
     "aten.neg.default":       "ADualQLL",
-    "aten.sgn.default":       "MulSignQLL",
-    "aten.exp.default":       "ExpQLL",
+    "aten.sgn.default":       "SignQLL",
+    "aten.exp.default":       "Exp",
     "aten.log.default":       "Ln",
+    "aten.reciprocal.default": "DualQLL",
     "aten.ones_like.default": "OnesLikeQLL",
 }
 
@@ -81,14 +89,99 @@ CONST_OPS = {
 }
 
 def translate_node(node, names, out):
-    """translate one graph node from one EzPC function"""
-    pass
+    """translate one graph node from one EzPC function
+        node.target holds torch operation name
+        node.args hold torch params passed to operator """
+    op = str(node.target)
+    args = node.args
+    arr = names[args[0]]
+    has_number = len(args) == 2 and not isinstance(args[1], Node)
 
-def torch_to_ezpc(gm, fname, is_der, batch, in_dim, out_dim):
-    """Build EzPC function for computing loss or derivative
-        loss: void computeTorchQLLLoss(){}
-        der: void getTorchQLLOutDer(){}"""
-    pass
+    # convert array based operation to EzPC
+    if not has_number:
+        if op not in ARRAY_OPS:
+            raise NotImplementedError(f"No EzPC translation for {op} for arrays")
+        arrays = ", ".join(names[x] for x in args)
+        return f"{ARRAY_OPS[op]}(BATCH, {arrays}, {out})"
+
+    # handle constant and special ops
+    c = args[1]
+    ezpc_c = to_ezpc_float(args[1])
+
+    if op == "aten.pow.Tensor_Scalar":
+        return f"Pow(BATCH, {arr}, {ezpc_c}, {out})"
+    if op == "aten.rsub.Scalar":
+        return (f"ADualQLL(BATCH, {arr}, {out}) ;\n"
+                f"AddScalarQLL(BATCH, {ezpc_c}, {out}, {out})")
+    if op in CONST_OPS:
+        function, constant = CONST_OPS[op]
+        return f"{function}(BATCH, {to_ezpc_float(constant(c))}, {arr}, {out})"
+    raise NotImplementedError(f"no EzPC translation for {op} with constant {c}")
+
+def translate_graph(gm, in_dim, out_dim):
+    """Translate a traced torch graph into EzPC statements."""
+    # get args and targets
+    # translate nodes
+    arg_names, arg_sources, declare, copies, body = [], [], [], [], []
+    count = 0
+    names = {}
+    result = None
+    for j in range(out_dim): # spec arguments are y0, x0, x1 so outdim first then in_dim
+        arg_names.append(f"y{j}")
+        arg_sources.append(f"fwdOut[i][{j}]")
+    for j in range(in_dim):
+        arg_names.append(f"x{j}")
+        arg_sources.append(f"inp[i][{j}]")
+
+    print(arg_names, arg_sources)
+    # trace graph, node op = {placeholder, call_function, output}
+    for node in gm.graph.nodes:
+        if node.op == "placeholder": # formula literal
+            k = len(declare)
+            names[node] = arg_names[k]
+            declare.append(f"float_fl[BATCH] {arg_names[k]} ;")
+            copies.append(f"{arg_names[k]}[i] = {arg_sources[k]} ;")
+        elif node.op == "call_function": # operator
+            count += 1
+            out = f"t{count}" # increment temp var
+            body.append(f"float_fl[BATCH] {out} ;")
+            body.append(f"{translate_node(node, names, out)} ;")
+            names[node] = out
+        elif node.op == "output": # which ezpc array returns the result
+            result = names[node.args[0]]
+
+    statements = declare + ["for i=[0:BATCH] {"] + copies + ["} ;"] + body
+    return statements, result
+
+def ezpc_function(fname, in_dim, out_dim, last_param, statements):
+    """Wrap statements in 'def void fname(inp, taget, fwdOut, last_param){}"""
+    header = (f"def void {fname}(float_fl[BATCH][{in_dim}] inp, float_fl[BATCH][{out_dim}] target, float_fl[BATCH][{out_dim}] fwdOut, {last_param})")
+    return "\n".join([header + " {"] + statements + ["}"]) + "\n"
+
+def torch_loss_to_ezpc(gm, fname, in_dim, out_dim):
+    """Build EzPC function for computing loss
+        loss: void computeTorchQLLLoss(type){body}
+        inputs:
+            gm: graph module that contains forward and backward operations
+            fname: either computeTorchQLLLoss or getTorchQLLOutDer
+            in_dim/out_dim: input/output dimension size
+        outputs:
+            EzPC code in structure of: (function signatures) + (body) + (ending)"""
+    statements, result = translate_graph(gm, in_dim, out_dim)
+    statements.append(f"getLoss(BATCH, {result}, loss) ;")
+    return ezpc_function(fname, in_dim, out_dim, "float_fl[1] loss", statements)
+
+def torch_der_to_ezpc(gm, fname, batch, in_dim, out_dim):
+    """Derivative graph -> EzPC fucntion writing dLoss/dy into der[i][0]"""
+    statements, result = translate_graph(gm, in_dim, out_dim)
+    statements += [
+        "float_fl[BATCH] scaled ;",
+        f"scalarMultiplication(BATCH, {to_ezpc_float(1 / batch)}, {result}, scaled) ;",
+        "for i=[0:BATCH] {",
+        "der[i][0] = scaled[i] ;",
+        "} ;",
+    ]
+    return ezpc_function(fname, in_dim, out_dim, f"float_fl[BATCH][{out_dim}] der", statements)
 
 class Layer :
     def __init__(self, in_features, out_features, layer_no) :
@@ -406,10 +499,11 @@ def void main () {brace_open}\n\
         """ Build loss and derivative trace from torch -> ezpc
             loss_gm (graph module): computeTorchQLLLoss
             der_gm: getTorchQLLOutDer"""
+        _, loss_name, der_name = LOSSES["TorchQLL"]
         loss_gm, der_gm = trace_spec(self.qll_p)
-        args = (self.batch, self.net.in_dim, self.net.no_class)
-        return torch_to_ezpc(loss_gm, "computeTorchQLLLoss", False, *args) + "\n" + torch_to_ezpc(der_gm, "computeTorchQLLOutDer", True, *args)
-        
+        in_dim, out_dim = self.net.in_dim, self.net.no_class
+        return (torch_loss_to_ezpc(loss_gm, loss_name, in_dim, out_dim) + "\n" + torch_der_to_ezpc(der_gm, der_name, self.batch, in_dim, out_dim))
+    
     def get_whole_program(self) :
         decl = self.get_batch_decl()
         fwd = self.get_forward_func()

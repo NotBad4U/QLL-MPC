@@ -70,7 +70,7 @@ def main(argv=None):
     for i in range(args.iters):
         y = net(X)
         a, b = atoms(X, y)
-        loss = q.disj(to_mul(a),to_mul(b)).mean()
+        loss = q.disj((a),(b)).mean()
         # loss = q.disj(a, b).mean()
         print(f"   iteration {i+1}: {loss.item():.15g}")
 
@@ -90,7 +90,7 @@ if __name__ == "__main__":
 # %%
 
 # quick visualization 
-q = Add(2.0)
+q = Mul(2.0)
 def toy_spec(y0, x0, x1):
     return q.disj((y0 - x0).abs(), (y0 - x1).abs())
 

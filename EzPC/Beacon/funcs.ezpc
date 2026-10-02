@@ -9,12 +9,15 @@ extern void Ln(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
 extern void Sigmoid(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
 extern void Tanh(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
 extern void Relu(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr, bool_bl[s1] hotArr) ;
+extern void ElemWiseAdd(int32_pl s1, float_fl[s1] inArr1, float_fl[s1] inArr2, float_fl[s1] outArr) ;
 extern void ElemWiseSub(int32_pl s1, float_fl[s1] inArr1, float_fl[s1] inArr2, float_fl[s1] outArr) ;
 extern void ElemWiseMul(int32_pl s1, float_fl[s1] inArr1, float_fl[s1] inArr2, float_fl[s1] outArr) ;
 extern void ElemWiseDiv(int32_pl s1, float_fl[s1] inArr1, float_fl[s1] inArr2, float_fl[s1] outArr) ;
 extern void IfElse(int32_pl s1, float_fl[s1] dat, bool_bl[s1] hot, float_fl[s1] out, bool_pl flip) ;
 extern void updateWeights(int32_pl s, float_pl lr, float_fl[s] wt, float_fl[s] der) ;
 extern void updateWeightsMomentum(int32_pl s, float_pl lr, float_pl beta, float_fl[s] wt, float_fl[s] der, float_fl[s] mom) ;
+extern void scalarMultiplication(int32_pl s1, float_pl c, float_fl[s1] inArr, float_fl[s1] outArr) ;
+extern void Pow(int32_pl s1, float_fl[s1] inArr, float_pl p, float_fl[s1] outArr) ;
 
 (* Single extern definition only *)
 extern void MatMul(int32_pl s1, int32_pl s2, int32_pl s3, float_fl[s1][s2] mat1, float_fl[s2][s3] mat2, float_fl[s1][s3] mat3) ;
@@ -27,6 +30,9 @@ extern void getOutDer(int32_pl s1, int32_pl s2, float_fl[s1][s2] batchSoft, floa
 (* QLL compute loss and get derivative *)
 extern void getQLLOutDer(int32_pl s1, int32_pl s2, float_pl p, float_fl[s1][s2] inp, float_fl[s1][s2] logits, float_fl[s1][s2] labels, float_fl[s1][s2] der) ;
 extern void computeQLLLoss(int32_pl s1, int32_pl s2, int32_pl s3, float_pl p, float_fl[s1][s2] inp, float_fl[s1][s2] labels, float_fl[s1][s2] logits, float_fl[1] loss) ;
+extern void AbsQLL(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
+extern void SignQLL(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
+extern void OnesLikeQLL(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
 
 extern void getBiasDer(int32_pl s1, int32_pl s2, float_fl[s1][s2] der, float_fl[s2] biasDer) ;
 
